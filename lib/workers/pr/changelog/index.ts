@@ -1,9 +1,9 @@
-<<<<<<< HEAD:lib/workers/pr/changelog/index.ts
 import { logger } from '../../../logger';
 import * as versioning from '../../../versioning';
 import * as sourceGithub from './source-github';
 import * as sourceGitlab from './source-gitlab';
 import { getReleases } from './releases';
+import { hostRules } from '../../../util/host-rules';
 import { ChangeLogConfig, ChangeLogResult } from './common';
 import { util } from 'util';
 import { URL } from 'url';
@@ -26,19 +26,15 @@ export async function getChangeLogJSON(
       `no sourceUrl or homepage provided for ${args.depName}, can't provide release notes!`
     );
     return null;
-  } else {
-    if (!sourceUrl) {
-      let tmpSourceUrl = URL.parse(args.homepage);
-      args.sourceUrl = `${tmpSourceUrl.protocol}//${tmpSourceUrl.hostname}/${tmpSourceUrl.pathname}`;
-    }
   }
   if (!fromVersion || version.equals(fromVersion, toVersion)) {
     return null;
   }
   const releases = args.releases || (await getReleases(args));
-
+  const host_type = hostRules.getPlatformByHostOrUrl(sourceUrl).hostType;
+  logger.debug(`Using ${host_type} changelog extractor.`)
   try {
-    if (args.sourceUrl.includes('gitlab')) {
+    if (host_type=='gitlab') {
       logger.debug(
         `Running changelog creation for gitlab with parameters ${JSON.stringify(args)}`
       );

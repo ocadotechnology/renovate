@@ -152,6 +152,18 @@ export async function getDependency(
       } else if (res.repository.url) {
         sourceUrl = res.repository.url;
       }
+      if (res.repository.url.startsWith('git:github.com/')) {
+        res.repository.url = 'https://' + res.repository.url.substr(4);
+      }
+      sourceUrl = parse(res.repository.url, {
+        extraBaseUrls,
+      });
+    }
+    if(sourceUrl==undefined){
+      sourceUrl = res.repository.url;
+    }
+    if (res.homepage && res.homepage.includes('://github.com')) {
+      delete res.homepage;
     }
     // Simplify response before caching and returning
     const dep: NpmDependency = {

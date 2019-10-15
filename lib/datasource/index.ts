@@ -1,7 +1,7 @@
 import { logger } from '../logger';
 import { addMetaData } from './metadata';
 import * as versioning from '../versioning';
-
+import * as url from 'url';
 import * as cargo from './cargo';
 import * as cdnjs from './cdnjs';
 import * as dart from './dart';
@@ -117,12 +117,19 @@ export async function getPkgReleases(
   function sortReleases(release1: Release, release2: Release): number {
     return version.sortVersions(release1.version, release2.version);
   }
+<<<<<<< HEAD
   if (res.releases) {
     res.releases = res.releases
       .filter(release => version.isVersion(release.version))
       .sort(sortReleases);
   }
   return res;
+=======
+  const dep = await datasources[datasource].getPkgReleases(config);
+  addMetaData(dep, datasource, config.lookupName);
+  dep.sourceUrl = sanitizeSourceUrl(dep.sourceUrl);
+  return dep;
+>>>>>>> https://github.com/renovatebot/renovate/issues/3323 Support GitLab-hosted changelogs #3323 add the ability to extract host type from host rules as per upstream requirements, depends on  https://github.com/renovatebot/renovate/issues/4654
 }
 
 export function supportsDigests(config: DigestConfig): boolean {
@@ -139,4 +146,46 @@ export function getDigest(
     { lookupName, registryUrls },
     value
   );
+}
+export function sanitizeSourceUrl(rawSourceUrl){
+  let repoUrlTmp: string;
+if(rawSourceUrl==undefined || rawSourceUrl==null){
+console.log('Parameter can not be null, eixiting');
+return null;
+}
+if(RegExp('^(http(s)?\:\/\/|git\:|ssh\:)').test(rawSourceUrl) || rawSourceUrl.startsWith('git+ssh:')){
+repoUrlTmp = rawSourceUrl;
+console.log(rawSourceUrl);
+
+}
+else {
+  repoUrlTmp = `ssh://${rawSourceUrl}`;
+// convert scp shorthand, which is the most common case, to a full ssh: url.
+}
+let { protocol, host, port, path }: any = url.parse(repoUrlTmp);
+if(host=='gitlab.com' || host == 'github.com' || host == 'bitbucket.org')
+{ //probably redundant, but could be used as a start for a more general git url extraction librabry later on as per the discussion in https://github.com/renovatebot/renovate/issues/3323 TODO add search for hostRules as well?
+  repoUrlTmp = `https://${host}${path}`
+} else if(protocol =='http:'){
+  // maybe this is useless, but someone might be using http.
+  repoUrlTmp = `${protocol}//${host}${path}`
+} else{
+  let nonstandard_port = host.split(':');
+  if(protocol!='https:' || protocol!='http:') {
+      // Assuming everyone is using https over standard ports unless explicitly specified otherwise.A port knock/http(s) connection attempt might be useful here.
+      if(!isNaN(port)){
+      repoUrlTmp = `https://${host.split(':')[0]}${path}`;
+    } else {
+      repoUrlTmp = `https://${host}${path}`;
+      //exceedingly rare case where something like :~ is utilized as part of an SCP url.Probably not something we should worry about, but let us stay on the safe side.
+    }
+} else {
+  repoUrlTmp = `${protocol}//${host}${path}`;
+  // http and https on non-standard ports.
+}
+}
+
+repoUrlTmp = repoUrlTmp.replace(RegExp('\.git$'),'')
+console.log(`Formatted source url for ${rawSourceUrl} : ${repoUrlTmp}`);
+return repoUrlTmp;
 }

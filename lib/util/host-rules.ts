@@ -154,6 +154,14 @@ export function find(search: HostRuleSearch): HostRule {
 }
 
 export function hosts({ hostType }: { hostType: string }): string[] {
+  let {host} = URL.parse(url);
+  for(let rule of hostRules){
+    if(rule.baseUrl == url || rule.hostName == host || rule.domainName == host){
+      return rule
+    }
+  }
+}
+export function hosts({ hostType }: { hostType: string }) {
   return hostRules
     .filter(rule => rule.hostType === hostType)
     .map(rule => {

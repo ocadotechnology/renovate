@@ -27,6 +27,7 @@ export async function renovateRepository(
   logger.info({ renovateVersion }, 'Renovating repository');
   logger.trace({ config });
   let repoResult: ProcessResult;
+  fs.writeFileSync('./configfromrepowrite.json', JSON.stringify(config, null, 2) , 'utf-8');
   try {
     await fs.ensureDir(config.localDir);
     logger.debug('Using localDir: ' + config.localDir);

@@ -2,21 +2,21 @@ import is from '@sindresorhus/is';
 
 import URL from 'url';
 import delay from 'delay';
-import parse from 'github-url-from-git';
 import pAll from 'p-all';
 import { logger } from '../../logger';
 
-import got from '../../util/got';
+import got, { GotJSONOptions } from '../../util/got';
 import * as hostRules from '../../util/host-rules';
 import { PkgReleaseConfig, ReleaseResult } from '../common';
+import { DATASOURCE_FAILURE } from '../../constants/error-messages';
 
-function getHostOpts(url: string) {
-  const opts: any = {
+function getHostOpts(url: string): GotJSONOptions {
+  const opts: GotJSONOptions = {
     json: true,
   };
   const { username, password } = hostRules.find({ hostType: 'packagist', url });
   if (username && password) {
-    opts.auth = `${opts.username}:${opts.password}`;
+    opts.auth = `${username}:${password}`;
   }
   return opts;
 }
@@ -135,7 +135,7 @@ function extractDepReleases(versions: RegistryFile): ReleaseResult {
     const release = versions[version];
     dep.homepage = release.homepage || dep.homepage;
     if (release.source && release.source.url) {
-      dep.sourceUrl = parse(release.source.url) || release.source.url;
+      dep.sourceUrl = release.source.url;
     }
     return {
       version: version.replace(/^v/, ''),
@@ -173,7 +173,9 @@ async function getAllPackages(regUrl: string): Promise<AllPackages | null> {
   const { packages, providersUrl, files, includesFiles } = registryMeta;
   const providerPackages: Record<string, string> = {};
   if (files) {
-    const queue = files.map(file => () => getPackagistFile(regUrl, file));
+    const queue = files.map(file => (): Promise<PackagistFile> =>
+      getPackagistFile(regUrl, file)
+    );
     const resolvedFiles = await pAll(queue, { concurrency: 5 });
     for (const res of resolvedFiles) {
       for (const [name, val] of Object.entries(res.providers)) {
@@ -204,7 +206,7 @@ async function getAllPackages(regUrl: string): Promise<AllPackages | null> {
   return allPackages;
 }
 
-async function packagistOrgLookup(name: string) {
+async function packagistOrgLookup(name: string): Promise<ReleaseResult> {
   const cacheNamespace = 'datasource-packagist-org';
   const cachedResult = await renovateCache.get<ReleaseResult>(
     cacheNamespace,
@@ -286,7 +288,7 @@ async function packageLookup(
       err.host === 'packagist.org'
     ) {
       logger.info('Packagist.org timeout');
-      throw new Error('registry-failure');
+      throw new Error(DATASOURCE_FAILURE);
     }
     logger.warn({ err, name }, 'packagist registry failure: Unknown error');
     return null;

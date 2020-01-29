@@ -9,17 +9,19 @@ import {
   autoExtendMavenRange,
   parseRange,
   EXCLUDING_POINT,
+  qualifierType,
+  QualifierTypes,
 } from './compare';
-import { RangeStrategy, VersioningApi } from '../common';
+import { NewValueConfig, VersioningApi } from '../common';
 
-const equals = (a: string, b: string) => compare(a, b) === 0;
+const equals = (a: string, b: string): boolean => compare(a, b) === 0;
 
-function matches(a: string, b: string) {
+function matches(a: string, b: string): boolean {
   if (!b) return false;
   if (isVersion(b)) return equals(a, b);
   const ranges = parseRange(b);
   if (!ranges) return false;
-  return ranges.reduce((result, range) => {
+  return ranges.reduce((result, range): any => {
     if (result) return result;
 
     const { leftType, leftValue, rightType, rightValue } = range;
@@ -83,26 +85,18 @@ const getPatch = (version: string): number | null => {
   return null;
 };
 
-const isGreaterThan = (a: string, b: string) => compare(a, b) === 1;
+const isGreaterThan = (a: string, b: string): boolean => compare(a, b) === 1;
 
 const isStable = (version: string): boolean | null => {
   if (isVersion(version)) {
     const tokens = tokenize(version);
-    const qualToken = tokens.find(token => token.type === TYPE_QUALIFIER);
-    if (qualToken) {
-      const val = qualToken.val;
-      // TODO: Can this if be removed, we never get here
-      // istanbul ignore if
-      if (
-        val === 'final' ||
-        val === 'ga' ||
-        val === 'release' ||
-        val === 'latest'
-      )
-        return true;
-
-      if (val === 'release' || val === 'sp') return true;
-      return false;
+    for (const token of tokens) {
+      if (token.type === TYPE_QUALIFIER) {
+        const qualType = qualifierType(token);
+        if (qualType && qualType < QualifierTypes.Release) {
+          return false;
+        }
+      }
     }
     return true;
   }
@@ -120,12 +114,11 @@ const maxSatisfyingVersion = (versions: string[], range: string): string => {
   }, null);
 };
 
-function getNewValue(
-  currentValue: string,
-  rangeStrategy: RangeStrategy,
-  _fromVersion: string,
-  toVersion: string
-): string | null {
+function getNewValue({
+  currentValue,
+  rangeStrategy,
+  toVersion,
+}: NewValueConfig): string | null {
   if (isVersion(currentValue) || rangeStrategy === 'pin') {
     return toVersion;
   }

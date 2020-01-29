@@ -8,6 +8,7 @@ import {
 } from '../../../config';
 import { applyPackageRules } from '../../../util/package-rules';
 import { get } from '../../../manager';
+import { LANGUAGE_DOCKER } from '../../../constants/languages';
 
 // Return only rules that contain an updateType
 function getUpdateTypeRules(packageRules: PackageRule[]): PackageRule[] {
@@ -17,7 +18,7 @@ function getUpdateTypeRules(packageRules: PackageRule[]): PackageRule[] {
 export function flattenUpdates(
   config: RenovateConfig,
   packageFiles: Record<string, any[]>
-) {
+): RenovateConfig[] {
   const updates = [];
   const updateTypes = [
     'major',
@@ -63,7 +64,7 @@ export function flattenUpdates(
                   .toLowerCase()
               : undefined;
             if (
-              updateConfig.language === 'docker' &&
+              updateConfig.language === LANGUAGE_DOCKER &&
               updateConfig.depName.match(/(^|\/)node$/) &&
               updateConfig.depName !== 'calico/node'
             ) {

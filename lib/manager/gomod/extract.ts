@@ -1,6 +1,7 @@
 import { logger } from '../../logger';
 import { isVersion } from '../../versioning/semver';
 import { PackageDependency, PackageFile } from '../common';
+import { DATASOURCE_GO } from '../../constants/data-binary-source';
 
 function getDep(
   lineNumber: number,
@@ -29,7 +30,7 @@ function getDep(
     } else {
       dep.depNameShort = depName;
     }
-    dep.datasource = 'go';
+    dep.datasource = DATASOURCE_GO;
   }
   const digestMatch = currentValue.match(/v0\.0.0-\d{14}-([a-f0-9]{12})/);
   if (digestMatch) {
@@ -54,7 +55,7 @@ export function extractPackageFile(content: string): PackageFile | null {
         deps.push(dep);
       }
       const requireMatch = line.match(/^require\s+([^\s]+)\s+([^\s]+)/);
-      if (requireMatch) {
+      if (requireMatch && !line.endsWith('// indirect')) {
         logger.trace({ lineNumber }, `require line: "${line}"`);
         const dep = getDep(lineNumber, requireMatch, 'require');
         deps.push(dep);
@@ -66,7 +67,7 @@ export function extractPackageFile(content: string): PackageFile | null {
           line = lines[lineNumber];
           const multiMatch = line.match(/^\s+([^\s]+)\s+([^\s]+)/);
           logger.trace(`reqLine: "${line}"`);
-          if (multiMatch) {
+          if (multiMatch && !line.endsWith('// indirect')) {
             logger.trace({ lineNumber }, `require line: "${line}"`);
             const dep = getDep(lineNumber, multiMatch, 'require');
             dep.managerData.multiLine = true;

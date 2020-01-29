@@ -5,6 +5,7 @@ import { logger } from '../logger';
 import { Platform } from './common';
 import { RenovateConfig } from '../config/common';
 import { getOptions } from '../config/definitions';
+import { PLATFORM_NOT_FOUND } from '../constants/error-messages';
 
 export * from './common';
 
@@ -16,7 +17,7 @@ let _platform: Platform;
 
 const handler: ProxyHandler<Platform> = {
   get(_target: Platform, prop: keyof Platform) {
-    if (!_platform) throw new Error(`platform-not-found`);
+    if (!_platform) throw new Error(PLATFORM_NOT_FOUND);
 
     // TODO: add more validation
 
@@ -36,7 +37,9 @@ export async function setPlatformApi(name: string): Promise<void> {
   _platform = await import('./' + name);
 }
 
-export async function initPlatform(config: RenovateConfig) {
+export async function initPlatform(
+  config: RenovateConfig
+): Promise<RenovateConfig> {
   await setPlatformApi(config.platform);
   // TODO: types
   const platformInfo = await platform.initPlatform(config);

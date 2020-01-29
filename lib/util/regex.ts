@@ -1,4 +1,5 @@
 import { logger } from '../logger';
+import { CONFIG_VALIDATION } from '../constants/error-messages';
 
 let RegEx;
 
@@ -14,11 +15,11 @@ try {
   RegEx = RegExp;
 }
 
-export function regEx(pattern: string, flags?: string) {
+export function regEx(pattern: string, flags?: string): RegExp {
   try {
     return new RegEx(pattern, flags);
   } catch (err) {
-    const error = new Error('config-validation');
+    const error = new Error(CONFIG_VALIDATION);
     error.configFile = pattern;
     error.validationError = 'Invalid regular expression: ' + err.toString();
     throw error;

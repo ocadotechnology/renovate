@@ -12,6 +12,7 @@ Renovate can upgrade the [Node.js](https://nodejs.org/en/) runtime used by your 
 Renovate is capable of managing the Node.js version in the following files:
 
 - The [`engines`](https://docs.npmjs.com/files/package.json#engines) field in [`package.json`](https://docs.npmjs.com/files/package.json).
+- The [`volta`](https://docs.volta.sh/guide/understanding#managing-your-project) field in [`package.json`](https://docs.npmjs.com/files/package.json).
 - The [`.nvmrc`](https://github.com/creationix/nvm#nvmrc) file for the [Node Version Manager](https://github.com/creationix/nvm).
 - The [`node_js`](https://docs.travis-ci.com/user/languages/javascript-with-nodejs/#Specifying-Node.js-versions) field in [`.travis.yml`](https://docs.travis-ci.com/user/customizing-the-build/).
 
@@ -28,7 +29,7 @@ When Renovate processes your project's repository it will look for the files lis
 
 ## Configuring Support Policy
 
-Renovate supports a [`supportPolicy`](configuration-options/#supportpolicy) option that can be passed the following values and associated versions (current as of May 2019):
+Renovate supports a [`supportPolicy`](/configuration-options/#supportpolicy) option that can be passed the following values and associated versions (current as of May 2019):
 
 **Default:** `lts`
 
@@ -51,4 +52,4 @@ For example, to instruct Renovate to upgrade your project to the latest [Long-te
 
 It's best to define this support policy inside the `node` configuration object so that it is applied to all Node.js-related files.
 
-For additional language support see the [`supportPolicy` documentation](configuration-options/#supportpolicy).
+For additional language support see the [`supportPolicy` documentation](/configuration-options/#supportpolicy).

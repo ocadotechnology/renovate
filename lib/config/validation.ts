@@ -1,10 +1,11 @@
 import is from '@sindresorhus/is';
-import safe from 'safe-regex';
+import * as handlebars from 'handlebars';
 import { getOptions, RenovateOptions } from './definitions';
 import { resolveConfigPresets } from './presets';
 import { hasValidSchedule, hasValidTimezone } from '../workers/branch/schedule';
 import * as managerValidator from './validation-helpers/managers';
 import { RenovateConfig, ValidationMessage } from './common';
+import { regEx } from '../util/regex';
 
 const options = getOptions();
 
@@ -66,6 +67,25 @@ export async function validateConfig(
           depName: 'Deprecation Warning',
           message: getDeprecationMessage(key),
         });
+      }
+      const templateKeys = [
+        'branchName',
+        'commitBody',
+        'commitMessage',
+        'prTitle',
+        'semanticCommitScope',
+      ];
+      if (templateKeys.includes(key) && val) {
+        try {
+          let res = handlebars.compile(val)(config);
+          res = handlebars.compile(res)(config);
+          res = handlebars.compile(res)(config);
+        } catch (err) {
+          errors.push({
+            depName: 'Configuration Error',
+            message: `Invalid handlebars template in config path: ${currentPath}`,
+          });
+        }
       }
       if (!optionTypes[key]) {
         errors.push({
@@ -178,41 +198,30 @@ export async function validateConfig(
                 }
               }
             }
-            if (
-              (key === 'packagePatterns' || key === 'excludePackagePatterns') &&
-              !(val && val.length === 1 && val[0] === '*')
-            ) {
-              try {
-                RegExp(val as any);
-                if (!safe(val as any)) {
-                  errors.push({
-                    depName: 'Configuration Error',
-                    message: `Unsafe regExp for ${currentPath}: \`${val}\``,
-                  });
-                }
-              } catch (e) {
-                errors.push({
-                  depName: 'Configuration Error',
-                  message: `Invalid regExp for ${currentPath}: \`${val}\``,
-                });
-              }
-            }
-            if (key === 'fileMatch') {
-              try {
-                for (const fileMatch of val) {
-                  RegExp(fileMatch);
-                  if (!safe(fileMatch)) {
+            if (key === 'packagePatterns' || key === 'excludePackagePatterns') {
+              for (const pattern of val) {
+                if (pattern !== '*') {
+                  try {
+                    regEx(pattern);
+                  } catch (e) {
                     errors.push({
                       depName: 'Configuration Error',
-                      message: `Unsafe regExp for ${currentPath}: \`${fileMatch}\``,
+                      message: `Invalid regExp for ${currentPath}: \`${pattern}\``,
                     });
                   }
                 }
-              } catch (e) {
-                errors.push({
-                  depName: 'Configuration Error',
-                  message: `Invalid regExp for ${currentPath}: \`${val}\``,
-                });
+              }
+            }
+            if (key === 'fileMatch') {
+              for (const fileMatch of val) {
+                try {
+                  regEx(fileMatch);
+                } catch (e) {
+                  errors.push({
+                    depName: 'Configuration Error',
+                    message: `Invalid regExp for ${currentPath}: \`${fileMatch}\``,
+                  });
+                }
               }
             }
             if (
@@ -233,7 +242,7 @@ export async function validateConfig(
               message: `Configuration option \`${currentPath}\` should be a string`,
             });
           }
-        } else if (type === 'object') {
+        } else if (type === 'object' && currentPath !== 'compatibility') {
           if (is.object(val)) {
             const ignoredObjects = options
               .filter(option => option.freeChoice)

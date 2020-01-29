@@ -1,31 +1,32 @@
 import { api as npm } from '../npm';
-import { VersioningApi, RangeStrategy } from '../common';
+import { VersioningApi, NewValueConfig } from '../common';
 
-function hashicorp2npm(input: string) {
+function hashicorp2npm(input: string): string {
   // The only case incompatible with semver is a "short" ~>, e.g. ~> 1.2
   return input.replace(/~>(\s*\d+\.\d+$)/, '^$1').replace(',', '');
 }
 
-const isLessThanRange = (version: string, range: string) =>
+const isLessThanRange = (version: string, range: string): boolean =>
   npm.isLessThanRange(hashicorp2npm(version), hashicorp2npm(range));
 
-export const isValid = (input: string) => npm.isValid(hashicorp2npm(input));
+export const isValid = (input: string): string | boolean =>
+  npm.isValid(hashicorp2npm(input));
 
-const matches = (version: string, range: string) =>
+const matches = (version: string, range: string): boolean =>
   npm.matches(hashicorp2npm(version), hashicorp2npm(range));
 
-const maxSatisfyingVersion = (versions: string[], range: string) =>
+const maxSatisfyingVersion = (versions: string[], range: string): string =>
   npm.maxSatisfyingVersion(versions.map(hashicorp2npm), hashicorp2npm(range));
 
-const minSatisfyingVersion = (versions: string[], range: string) =>
+const minSatisfyingVersion = (versions: string[], range: string): string =>
   npm.minSatisfyingVersion(versions.map(hashicorp2npm), hashicorp2npm(range));
 
-function getNewValue(
-  currentValue: string,
-  rangeStrategy: RangeStrategy,
-  fromVersion: string,
-  toVersion: string
-) {
+function getNewValue({
+  currentValue,
+  rangeStrategy,
+  fromVersion,
+  toVersion,
+}: NewValueConfig): string {
   // handle specia. ~> 1.2 case
   if (currentValue.match(/(~>\s*)\d+\.\d+$/)) {
     return currentValue.replace(
@@ -33,7 +34,12 @@ function getNewValue(
       `$1${npm.getMajor(toVersion)}.0`
     );
   }
-  return npm.getNewValue(currentValue, rangeStrategy, fromVersion, toVersion);
+  return npm.getNewValue({
+    currentValue,
+    rangeStrategy,
+    fromVersion,
+    toVersion,
+  });
 }
 
 export const api: VersioningApi = {

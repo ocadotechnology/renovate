@@ -1,10 +1,9 @@
 import { logger } from '../../logger';
 import { isVersion } from '../../versioning/semver';
 import { PackageFile, PackageDependency } from '../common';
+import { DATASOURCE_GITHUB } from '../../constants/data-binary-source';
 
-export { extractPackageFile };
-
-function extractPackageFile(content: string): PackageFile | null {
+export function extractPackageFile(content: string): PackageFile | null {
   const deps: PackageDependency[] = [];
   try {
     const lines = content.split('\n');
@@ -24,7 +23,7 @@ function extractPackageFile(content: string): PackageFile | null {
         logger.debug(`serviceImageLine: "${line}"`);
         const { currentIndent } = line.match(/^(?<currentIndent>\s*)/).groups;
         const depLineMatch = line.match(
-          /^\s+(?:-\s+)?(?<depName>[^#]+)#(?<currentValue>[^:]+):/
+          /^\s+(?:-\s+)?(?<depName>[^#]+)#(?<currentValue>[^:]+)/
         );
         if (currentIndent.length <= pluginsIndent.length) {
           isPluginsSection = false;
@@ -64,7 +63,7 @@ function extractPackageFile(content: string): PackageFile | null {
             skipReason,
           };
           if (repo) {
-            dep.datasource = 'github';
+            dep.datasource = DATASOURCE_GITHUB;
             dep.lookupName = repo;
           }
           deps.push(dep);

@@ -1,7 +1,7 @@
 import { api as npm } from '../npm';
-import { VersioningApi, RangeStrategy } from '../common';
+import { VersioningApi, NewValueConfig } from '../common';
 
-function hex2npm(input: string) {
+function hex2npm(input: string): string {
   return input
     .replace(/~>\s*(\d+\.\d+)$/, '^$1')
     .replace(/~>\s*(\d+\.\d+\.\d+)/, '~$1')
@@ -10,7 +10,7 @@ function hex2npm(input: string) {
     .replace(/!=\s*(\d+\.\d+(\.\d+.*)?)/, '>$1 <$1');
 }
 
-function npm2hex(input: string) {
+function npm2hex(input: string): string {
   const res = input
     .split(' ')
     .map(str => str.trim())
@@ -31,32 +31,33 @@ function npm2hex(input: string) {
   return output;
 }
 
-const isLessThanRange = (version: string, range: string) =>
+const isLessThanRange = (version: string, range: string): boolean =>
   npm.isLessThanRange(hex2npm(version), hex2npm(range));
 
-const isValid = (input: string) => npm.isValid(hex2npm(input));
+const isValid = (input: string): string | boolean =>
+  npm.isValid(hex2npm(input));
 
-const matches = (version: string, range: string) =>
+const matches = (version: string, range: string): boolean =>
   npm.matches(hex2npm(version), hex2npm(range));
 
-const maxSatisfyingVersion = (versions: string[], range: string) =>
+const maxSatisfyingVersion = (versions: string[], range: string): string =>
   npm.maxSatisfyingVersion(versions.map(hex2npm), hex2npm(range));
 
-const minSatisfyingVersion = (versions: string[], range: string) =>
+const minSatisfyingVersion = (versions: string[], range: string): string =>
   npm.minSatisfyingVersion(versions.map(hex2npm), hex2npm(range));
 
-const getNewValue = (
-  currentValue: string,
-  rangeStrategy: RangeStrategy,
-  fromVersion: string,
-  toVersion: string
-) => {
-  let newSemver = npm.getNewValue(
-    hex2npm(currentValue),
+const getNewValue = ({
+  currentValue,
+  rangeStrategy,
+  fromVersion,
+  toVersion,
+}: NewValueConfig): string => {
+  let newSemver = npm.getNewValue({
+    currentValue: hex2npm(currentValue),
     rangeStrategy,
     fromVersion,
-    toVersion
-  );
+    toVersion,
+  });
   newSemver = npm2hex(newSemver);
   if (currentValue.match(/~>\s*(\d+\.\d+)$/)) {
     newSemver = newSemver.replace(

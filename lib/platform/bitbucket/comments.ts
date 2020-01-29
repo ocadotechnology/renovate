@@ -1,6 +1,7 @@
 import { logger } from '../../logger';
 import { Config, accumulateValues } from './utils';
 import { api } from './bb-got-wrapper';
+import { EnsureCommentConfig } from '../common';
 
 interface Comment {
   content: { raw: string };
@@ -9,7 +10,14 @@ interface Comment {
 
 export type CommentsConfig = Pick<Config, 'repository'>;
 
-async function getComments(config: CommentsConfig, prNo: number) {
+interface EnsureBitBucketCommentConfig extends EnsureCommentConfig {
+  config: CommentsConfig;
+}
+
+async function getComments(
+  config: CommentsConfig,
+  prNo: number
+): Promise<Comment[]> {
   const comments = await accumulateValues<Comment>(
     `/2.0/repositories/${config.repository}/pullrequests/${prNo}/comments`
   );
@@ -18,7 +26,11 @@ async function getComments(config: CommentsConfig, prNo: number) {
   return comments;
 }
 
-async function addComment(config: CommentsConfig, prNo: number, raw: string) {
+async function addComment(
+  config: CommentsConfig,
+  prNo: number,
+  raw: string
+): Promise<void> {
   await api.post(
     `/2.0/repositories/${config.repository}/pullrequests/${prNo}/comments`,
     {
@@ -32,7 +44,7 @@ async function editComment(
   prNo: number,
   commentId: number,
   raw: string
-) {
+): Promise<void> {
   await api.put(
     `/2.0/repositories/${config.repository}/pullrequests/${prNo}/comments/${commentId}`,
     {
@@ -45,18 +57,18 @@ async function deleteComment(
   config: CommentsConfig,
   prNo: number,
   commentId: number
-) {
+): Promise<void> {
   await api.delete(
     `/2.0/repositories/${config.repository}/pullrequests/${prNo}/comments/${commentId}`
   );
 }
 
-export async function ensureComment(
-  config: CommentsConfig,
-  prNo: number,
-  topic: string | null,
-  content: string
-) {
+export async function ensureComment({
+  config,
+  number: prNo,
+  topic,
+  content,
+}: EnsureBitBucketCommentConfig): Promise<boolean> {
   try {
     const comments = await getComments(config, prNo);
     let body: string;
@@ -104,11 +116,11 @@ export async function ensureCommentRemoval(
   config: CommentsConfig,
   prNo: number,
   topic: string
-) {
+): Promise<void> {
   try {
     logger.debug(`Ensuring comment "${topic}" in #${prNo} is removed`);
     const comments = await getComments(config, prNo);
-    let commentId;
+    let commentId: number;
     comments.forEach(comment => {
       if (comment.content.raw.startsWith(`### ${topic}\n\n`)) {
         commentId = comment.id;

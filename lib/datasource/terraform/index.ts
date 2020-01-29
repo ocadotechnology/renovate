@@ -1,10 +1,17 @@
 import is from '@sindresorhus/is';
-import parse from 'github-url-from-git';
 import { logger } from '../../logger';
 import got from '../../util/got';
 import { PkgReleaseConfig, ReleaseResult } from '../common';
 
-function getRegistryRepository(lookupName: string, registryUrls: string[]) {
+interface RegistryRepository {
+  registry: string;
+  repository: string;
+}
+
+function getRegistryRepository(
+  lookupName: string,
+  registryUrls: string[]
+): RegistryRepository {
   let registry: string;
   const split = lookupName.split('/');
   if (split.length > 3 && split[0].includes('.')) {
@@ -76,7 +83,7 @@ export async function getPkgReleases({
       releases: null,
     };
     if (res.source) {
-      dep.sourceUrl = parse(res.source);
+      dep.sourceUrl = res.source;
     }
     dep.releases = res.versions.map(version => ({
       version,

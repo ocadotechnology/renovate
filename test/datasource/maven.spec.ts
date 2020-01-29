@@ -1,6 +1,11 @@
 import nock from 'nock';
 import fs from 'fs';
 import * as datasource from '../../lib/datasource';
+import { DATASOURCE_FAILURE } from '../../lib/constants/error-messages';
+import { VERSION_SCHEME_LOOSE } from '../../lib/constants/version-schemes';
+import { DATASOURCE_MAVEN } from '../../lib/constants/data-binary-source';
+
+const hostRules = require('../../lib/util/host-rules');
 
 const MYSQL_VERSIONS = [
   '6.0.5',
@@ -23,12 +28,18 @@ const MYSQL_MAVEN_MYSQL_POM = fs.readFileSync(
 );
 
 const config = {
-  datasource: 'maven',
-  versionScheme: 'loose',
+  versionScheme: VERSION_SCHEME_LOOSE,
+  datasource: DATASOURCE_MAVEN,
 };
 
 describe('datasource/maven', () => {
   beforeEach(() => {
+    hostRules.add({
+      hostType: 'maven',
+      hostName: 'frontend_for_private_s3_repository',
+      username: 'username',
+      password: 'password',
+    });
     nock.disableNetConnect();
     nock('http://central.maven.org')
       .get('/maven2/mysql/mysql-connector-java/maven-metadata.xml')
@@ -47,11 +58,39 @@ describe('datasource/maven', () => {
     nock('http://empty_repo')
       .get('/mysql/mysql-connector-java/maven-metadata.xml')
       .reply(200, 'non-sense');
+    nock('http://frontend_for_private_s3_repository')
+      .get('/maven2/mysql/mysql-connector-java/maven-metadata.xml')
+      .basicAuth({ user: 'username', pass: 'password' })
+      .reply(302, '', {
+        Location:
+          'http://private_s3_repository/maven2/mysql/mysql-connector-java/maven-metadata.xml?X-Amz-Algorithm=AWS4-HMAC-SHA256',
+      })
+      .get(
+        '/maven2/mysql/mysql-connector-java/8.0.12/mysql-connector-java-8.0.12.pom'
+      )
+      .basicAuth({ user: 'username', pass: 'password' })
+      .reply(302, '', {
+        Location:
+          'http://private_s3_repository/maven2/mysql/mysql-connector-java/8.0.12/mysql-connector-java-8.0.12.pom?X-Amz-Algorithm=AWS4-HMAC-SHA256',
+      });
+    nock('http://private_s3_repository', { badheaders: ['authorization'] })
+      .get(
+        '/maven2/mysql/mysql-connector-java/maven-metadata.xml?X-Amz-Algorithm=AWS4-HMAC-SHA256'
+      )
+      .reply(200, MYSQL_MAVEN_METADATA)
+      .get(
+        '/maven2/mysql/mysql-connector-java/8.0.12/mysql-connector-java-8.0.12.pom?X-Amz-Algorithm=AWS4-HMAC-SHA256'
+      )
+      .reply(200, MYSQL_MAVEN_MYSQL_POM);
   });
 
   afterEach(() => {
     nock.enableNetConnect();
   });
+
+  function generateReleases(versions) {
+    return versions.map(v => ({ version: v }));
+  }
 
   describe('getPkgReleases', () => {
     it('should return empty if library is not found', async () => {
@@ -140,7 +179,7 @@ describe('datasource/maven', () => {
           lookupName: 'org:artifact',
           registryUrls: ['http://central.maven.org/maven2/'],
         })
-      ).rejects.toThrow(Error('registry-failure'));
+      ).rejects.toThrow(Error(DATASOURCE_FAILURE));
     });
 
     it('should return all versions of a specific library if a repository fails because invalid protocol', async () => {
@@ -234,9 +273,14 @@ describe('datasource/maven', () => {
       });
       expect(releases.sourceUrl).toEqual('https://github.com/realm/realm-java');
     });
+
+    it('should remove authentication header when redirected with authentication in query string', async () => {
+      const releases = await datasource.getPkgReleases({
+        ...config,
+        lookupName: 'mysql:mysql-connector-java',
+        registryUrls: ['http://frontend_for_private_s3_repository/maven2'],
+      });
+      expect(releases.releases).toEqual(generateReleases(MYSQL_VERSIONS));
+    });
   });
 });
-
-function generateReleases(versions) {
-  return versions.map(v => ({ version: v }));
-}

@@ -1,18 +1,18 @@
 import upath from 'upath';
 import fs from 'fs-extra';
-import { hrtime } from 'process';
 import { platform } from '../../platform';
 import { exec } from '../../util/exec';
 import { logger } from '../../logger';
-import { UpdateArtifactsConfig, UpdateArtifactsResult } from '../common';
+import { UpdateArtifact, UpdateArtifactsResult } from '../common';
+import { BinarySource } from '../../util/exec/common';
 
-export async function updateArtifacts(
-  packageFileName: string,
-  updatedDeps: string[],
-  newPackageFileContent: string,
-  config: UpdateArtifactsConfig
-): Promise<UpdateArtifactsResult[] | null> {
-  await logger.debug(`mix.getArtifacts(${packageFileName})`);
+export async function updateArtifacts({
+  packageFileName,
+  updatedDeps,
+  newPackageFileContent,
+  config,
+}: UpdateArtifact): Promise<UpdateArtifactsResult[] | null> {
+  logger.debug(`mix.getArtifacts(${packageFileName})`);
   if (updatedDeps.length < 1) {
     logger.debug('No updated mix deps - returning null');
     return null;
@@ -32,7 +32,7 @@ export async function updateArtifacts(
     logger.warn({ err }, 'mix.exs could not be written');
     return [
       {
-        lockFileError: {
+        artifactError: {
           lockFile: lockFileName,
           stderr: err.message,
         },
@@ -47,7 +47,7 @@ export async function updateArtifacts(
   }
 
   const cmdParts =
-    config.binarySource === 'docker'
+    config.binarySource === BinarySource.Docker
       ? [
           'docker',
           'run',
@@ -59,13 +59,10 @@ export async function updateArtifacts(
       : ['mix'];
   cmdParts.push('deps.update');
 
-  const startTime = hrtime();
   /* istanbul ignore next */
   try {
     const command = [...cmdParts, ...updatedDeps].join(' ');
-    const { stdout, stderr } = await exec(command, { cwd });
-    logger.debug(stdout);
-    if (stderr) logger.warn('error: ' + stderr);
+    await exec(command, { cwd });
   } catch (err) {
     logger.warn(
       { err, message: err.message },
@@ -74,7 +71,7 @@ export async function updateArtifacts(
 
     return [
       {
-        lockFileError: {
+        artifactError: {
           lockFile: lockFileName,
           stderr: err.message,
         },
@@ -82,18 +79,13 @@ export async function updateArtifacts(
     ];
   }
 
-  const duration = hrtime(startTime);
-  const seconds = Math.round(duration[0] + duration[1] / 1e9);
-  logger.info({ seconds, type: 'mix.lock' }, 'Updated lockfile');
-  logger.debug('Returning updated mix.lock');
-
   const localLockFileName = upath.join(cwd, lockFileName);
   const newMixLockContent = await fs.readFile(localLockFileName, 'utf8');
   if (existingLockFileContent === newMixLockContent) {
     logger.debug('mix.lock is unchanged');
     return null;
   }
-
+  logger.debug('Returning updated mix.lock');
   return [
     {
       file: {

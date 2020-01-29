@@ -4,6 +4,7 @@ import { getInstalledPath } from 'get-installed-path';
 import { exec } from '../../../util/exec';
 import { logger } from '../../../logger';
 import { PostUpdateConfig } from '../../common';
+import { BinarySource } from '../../../util/exec/common';
 
 export interface GenerateLockFileResult {
   error?: boolean;
@@ -23,7 +24,6 @@ export async function generateLockFile(
   let stderr: string;
   let cmd: string;
   try {
-    const startTime = process.hrtime();
     try {
       // See if renovate is installed locally
       const installedPath = join(
@@ -61,10 +61,10 @@ export async function generateLockFile(
         }
       }
     }
-    if (config.binarySource === 'global') {
+    if (config.binarySource === BinarySource.Global) {
       cmd = 'pnpm';
     }
-    if (config.binarySource === 'docker') {
+    if (config.binarySource === BinarySource.Docker) {
       logger.info('Running pnpm via docker');
       cmd = `docker run --rm `;
       // istanbul ignore if
@@ -75,7 +75,7 @@ export async function generateLockFile(
       if (config.cacheDir) {
         volumes.push(config.cacheDir);
       }
-      cmd += volumes.map(v => `-v ${v}:${v} `).join('');
+      cmd += volumes.map(v => `-v "${v}":"${v}" `).join('');
       // istanbul ignore if
       if (config.dockerMapDotfiles) {
         const homeDir =
@@ -85,28 +85,22 @@ export async function generateLockFile(
       }
       const envVars = ['NPM_CONFIG_CACHE', 'npm_config_store'];
       cmd += envVars.map(e => `-e ${e} `).join('');
-      cmd += `-w ${cwd} `;
+      cmd += `-w "${cwd}" `;
       cmd += `renovate/pnpm pnpm`;
     }
     logger.debug(`Using pnpm: ${cmd}`);
     cmd += ' install';
     cmd += ' --lockfile-only';
-    cmd += ' --ignore-scripts';
-    cmd += ' --ignore-pnpmfile';
+    if (global.trustLevel !== 'high' || config.ignoreScripts) {
+      cmd += ' --ignore-scripts';
+      cmd += ' --ignore-pnpmfile';
+    }
     // TODO: Switch to native util.promisify once using only node 8
     ({ stdout, stderr } = await exec(cmd, {
       cwd,
       env,
     }));
-    logger.debug(`pnpm stdout:\n${stdout}`);
-    logger.debug(`pnpm stderr:\n${stderr}`);
-    const duration = process.hrtime(startTime);
-    const seconds = Math.round(duration[0] + duration[1] / 1e9);
     lockFile = await readFile(join(cwd, 'pnpm-lock.yaml'), 'utf8');
-    logger.info(
-      { seconds, type: 'pnpm-lock.yaml', stdout, stderr },
-      'Generated lockfile'
-    );
   } catch (err) /* istanbul ignore next */ {
     logger.info(
       {

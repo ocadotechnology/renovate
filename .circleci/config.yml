@@ -14,6 +14,13 @@ commands:
             git config --global user.name "Renovate Bot"
             git --version
 
+      - restore_cache:
+          keys:
+            - dependency-cache-v2-{{ .Branch }}-{{ checksum "yarn.lock" }}
+            - dependency-cache-v2-{{ .Branch }}-
+            - dependency-cache-v2-
+            - dependency-cache-
+
       - run:
           name: Installing Dependencies
           command: |
@@ -21,8 +28,9 @@ commands:
             pip install --user -r requirements.txt
 
       - save_cache:
-          key: dependency-cache-{{ checksum "yarn.lock" }}
+          key: dependency-cache-v2-{{ checksum "yarn.lock" }}
           paths:
+            - ~/.cache/yarn
             - ./node_modules
             - '.cache'
             - '.eslintcache'
@@ -45,7 +53,8 @@ commands:
           command: |
             yarn jest --maxWorkers=2  --ci --reporters=default --reporters=jest-junit
           environment:
-            JEST_JUNIT_OUTPUT: 'test-results/jest/results.xml'
+            JEST_JUNIT_OUTPUT_DIR: 'test-results/jest'
+            JEST_JUNIT_OUTPUT_NAME: 'results.xml'
 
       - store_test_results:
           path: test-results
@@ -65,19 +74,20 @@ commands:
 jobs:
   test_node_10:
     docker:
-      - image: amd64/node:10.16.3@sha256:e0f7dabe991810057aee6ba7a7d4136fe7fc70e99235d79e6c7ae0177656a5c8
-    steps:
-      - test
-  test_node_12:
-    docker:
-      - image: amd64/node:12.11.1@sha256:aef1338c8538d8bf1163a75723ba64dc0299c3ba521e0b18b1a4af12df99f622
+      - image: amd64/node:10.18.1@sha256:c46b41071ce455e47f205bf83b7ad6593ad22194639df1298a735f407ded1df6
     steps:
       - test
   release:
     docker:
-      - image: amd64/node:10.16.3@sha256:e0f7dabe991810057aee6ba7a7d4136fe7fc70e99235d79e6c7ae0177656a5c8
+      - image: amd64/node:10.18.1@sha256:c46b41071ce455e47f205bf83b7ad6593ad22194639df1298a735f407ded1df6
     steps:
       - checkout
+      - restore_cache:
+          keys:
+            - dependency-cache-v2-{{ .Branch }}-{{ checksum "yarn.lock" }}
+            - dependency-cache-v2-{{ .Branch }}-
+            - dependency-cache-v2-
+            - dependency-cache-
       - run: yarn install --frozen-lockfile
       - run: yarn build
       - run: yarn semantic-release
@@ -88,11 +98,9 @@ workflows:
   test_and_release:
     jobs:
       - test_node_10
-      - test_node_12
       - release:
           requires:
             - test_node_10
-            - test_node_12
           filters:
             branches:
               only:

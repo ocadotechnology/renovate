@@ -13,7 +13,7 @@ Of course, please keep in mind that people's definitions of "noise" may differ. 
 
 To reduce noise, you can reduce the number of updates in total, and a good way to do that is via intelligent grouping of related packages.
 
-As an example, our default `":app"` and `":library"` [presets](config-presets/) include the rule `"group:monorepos"`, which means that "sibling" packages from known monorepos will always be grouped into the same branch/PR by renovate. For example, all `@angular/*` packages that are updated at the same time will be raised in a "Renovate angular monorepo packages" PR. And every package in the React monorepo will be grouped together in a React monorepo PR too.
+As an example, our default `":app"` and `":library"` [presets](/config-presets/) include the rule `"group:monorepos"`, which means that "sibling" packages from known monorepos will always be grouped into the same branch/PR by renovate. For example, all `@angular/*` packages that are updated at the same time will be raised in a "Renovate angular monorepo packages" PR. And every package in the React monorepo will be grouped together in a React monorepo PR too.
 
 You may wish to take this further, for example you might want to group together all packages related to `eslint`, even if they come from separate repositories/authors. In that case you might add config like this:
 
@@ -73,6 +73,8 @@ Or perhaps at least weekly:
     }
   ]
 ```
+
+If you're wondering what is supported and not, under the hood, the schedule is parsed using [later.js](https://bunkat.github.io/later/) using the `later.parse.text(scheduleString)` API. [This page](https://bunkat.github.io/later/parsers.html#text) explains the supported syntax or you can experiment on the [RunKit playground](https://npm.runkit.com/later).
 
 ## Automerging
 

@@ -1,46 +1,84 @@
 import { DEFAULT_MAVEN_REPO } from '../maven/extract';
 import { PackageFile, PackageDependency } from '../common';
+import { get } from '../../versioning';
+import { VERSION_SCHEME_MAVEN } from '../../constants/version-schemes';
+import { DATASOURCE_SBT } from '../../constants/data-binary-source';
 
-const isComment = (str: string) => /^\s*\/\//.test(str);
+const isComment = (str: string): boolean => /^\s*\/\//.test(str);
 
-const isSingleLineDep = (str: string) =>
+const isSingleLineDep = (str: string): boolean =>
   /^\s*(libraryDependencies|dependencyOverrides)\s*\+=\s*/.test(str);
 
-const isDepsBegin = (str: string) =>
+const isDepsBegin = (str: string): boolean =>
   /^\s*(libraryDependencies|dependencyOverrides)\s*\+\+=\s*/.test(str);
 
-const isPluginDep = (str: string) => /^\s*addSbtPlugin\s*\(.*\)\s*$/.test(str);
+const isPluginDep = (str: string): boolean =>
+  /^\s*addSbtPlugin\s*\(.*\)\s*$/.test(str);
 
-const isStringLiteral = (str: string) => /^"[^"]*"$/.test(str);
+const isStringLiteral = (str: string): boolean => /^"[^"]*"$/.test(str);
 
-const isScalaVersion = (str: string) =>
+const isScalaVersion = (str: string): boolean =>
   /^\s*scalaVersion\s*:=\s*"[^"]*"\s*$/.test(str);
-const getScalaVersion = (str: string) =>
+
+const getScalaVersion = (str: string): string =>
   str.replace(/^\s*scalaVersion\s*:=\s*"/, '').replace(/"\s*$/, '');
 
-const isScalaVersionVariable = (str: string) =>
+/*
+  https://www.scala-sbt.org/release/docs/Cross-Build.html#Publishing+conventions
+ */
+const normalizeScalaVersion = (str: string): string => {
+  // istanbul ignore if
+  if (!str) return str;
+  const versioning = get(VERSION_SCHEME_MAVEN);
+  if (versioning.isVersion(str)) {
+    // Do not normalize unstable versions
+    if (!versioning.isStable(str)) return str;
+    // Do not normalize versions prior to 2.10
+    if (!versioning.isGreaterThan(str, '2.10.0')) return str;
+  }
+  if (/^\d+\.\d+\.\d+$/.test(str))
+    return str.replace(/^(\d+)\.(\d+)\.\d+$/, '$1.$2');
+  // istanbul ignore next
+  return str;
+};
+
+const isScalaVersionVariable = (str: string): boolean =>
   /^\s*scalaVersion\s*:=\s*[_a-zA-Z][_a-zA-Z0-9]*\s*$/.test(str);
-const getScalaVersionVariable = (str: string) =>
+
+const getScalaVersionVariable = (str: string): string =>
   str.replace(/^\s*scalaVersion\s*:=\s*/, '').replace(/\s*$/, '');
 
-const isResolver = (str: string) =>
+const isResolver = (str: string): boolean =>
   /^\s*(resolvers\s*\+\+?=\s*(Seq\()?)?"[^"]*"\s*at\s*"[^"]*"[\s,)]*$/.test(
     str
   );
-const getResolverUrl = (str: string) =>
+const getResolverUrl = (str: string): string =>
   str
     .replace(/^\s*(resolvers\s*\+\+?=\s*(Seq\()?)?"[^"]*"\s*at\s*"/, '')
     .replace(/"[\s,)]*$/, '');
 
-const isVarDef = (str: string) =>
-  /^\s*val\s+[_a-zA-Z][_a-zA-Z0-9]*\s*=\s*"[^"]*"\s*$/.test(str);
-const getVarName = (str: string) =>
-  str.replace(/^\s*val\s+/, '').replace(/\s*=\s*"[^"]*"\s*$/, '');
-const isVarName = (str: string) => /^[_a-zA-Z][_a-zA-Z0-9]*$/.test(str);
-const getVarInfo = (str: string, ctx: ParseContext) => {
+const isVarDependency = (str: string): boolean =>
+  /^\s*(lazy\s*)?val\s[_a-zA-Z][_a-zA-Z0-9]*\s*=.*(%%?).*%.*/.test(str);
+
+const isVarDef = (str: string): boolean =>
+  /^\s*(lazy\s*)?val\s+[_a-zA-Z][_a-zA-Z0-9]*\s*=\s*"[^"]*"\s*$/.test(str);
+
+const getVarName = (str: string): string =>
+  str.replace(/^\s*(lazy\s*)?val\s+/, '').replace(/\s*=\s*"[^"]*"\s*$/, '');
+
+const isVarName = (str: string): boolean =>
+  /^[_a-zA-Z][_a-zA-Z0-9]*$/.test(str);
+
+const getVarInfo = (
+  str: string,
+  ctx: ParseContext
+): { val: string; fileReplacePosition: number } => {
   const { fileOffset } = ctx;
-  const rightPart = str.replace(/^\s*val\s+[_a-zA-Z][_a-zA-Z0-9]*\s*=\s*"/, '');
-  const fileReplacePosition = str.search(rightPart) + fileOffset;
+  const rightPart = str.replace(
+    /^\s*(lazy\s*)?val\s+[_a-zA-Z][_a-zA-Z0-9]*\s*=\s*"/,
+    ''
+  );
+  const fileReplacePosition = str.indexOf(rightPart) + fileOffset;
   const val = rightPart.replace(/"\s*$/, '');
   return { val, fileReplacePosition };
 };
@@ -59,10 +97,10 @@ function parseDepExpr(
   const { scalaVersion, fileOffset, variables } = ctx;
   let { depType } = ctx;
 
-  const isValidToken = (str: string) =>
+  const isValidToken = (str: string): boolean =>
     isStringLiteral(str) || (isVarName(str) && !!variables[str]);
 
-  const resolveToken = (str: string) =>
+  const resolveToken = (str: string): string =>
     isStringLiteral(str)
       ? str.replace(/^"/, '').replace(/"$/, '')
       : variables[str].val;
@@ -108,11 +146,13 @@ function parseDepExpr(
     // help us to avoid errors in updating phase.
     fileReplacePosition = 0;
     fileReplacePosition +=
-      expr.slice(fileReplacePosition).search(rawGroupId) + rawGroupId.length;
+      expr.slice(fileReplacePosition).indexOf(rawGroupId) + rawGroupId.length;
     fileReplacePosition +=
-      expr.slice(fileReplacePosition).search(rawArtifactId) +
+      expr.slice(fileReplacePosition).indexOf(rawArtifactId) +
       rawArtifactId.length;
-    fileReplacePosition += expr.slice(fileReplacePosition).search(currentValue);
+    fileReplacePosition += expr
+      .slice(fileReplacePosition)
+      .indexOf(currentValue);
     fileReplacePosition += fileOffset;
   } else {
     fileReplacePosition = variables[rawVersion].fileReplacePosition;
@@ -158,7 +198,7 @@ function parseSbtLine(
   if (!isComment(line)) {
     if (isScalaVersion(line)) {
       isMultiDeps = false;
-      scalaVersion = getScalaVersion(line);
+      scalaVersion = normalizeScalaVersion(getScalaVersion(line));
     } else if (isScalaVersionVariable(line)) {
       isMultiDeps = false;
       scalaVersionVariable = getScalaVersionVariable(line);
@@ -168,6 +208,17 @@ function parseSbtLine(
       registryUrls.push(url);
     } else if (isVarDef(line)) {
       variables[getVarName(line)] = getVarInfo(line, ctx);
+    } else if (isVarDependency(line)) {
+      isMultiDeps = false;
+      const depExpr = line.replace(
+        /^\s*(lazy\s*)?val\s[_a-zA-Z][_a-zA-Z0-9]*\s*=\s*/,
+        ''
+      );
+      const expOffset = line.length - depExpr.length;
+      dep = parseDepExpr(depExpr, {
+        ...ctx,
+        fileOffset: fileOffset + expOffset,
+      });
     } else if (isSingleLineDep(line)) {
       isMultiDeps = false;
       const depExpr = line.replace(/^.*\+=\s*/, '');
@@ -201,7 +252,7 @@ function parseSbtLine(
 
   if (dep)
     deps.push({
-      datasource: 'sbt',
+      datasource: DATASOURCE_SBT,
       registryUrls: registryUrls as string[],
       ...dep,
     });
@@ -215,7 +266,7 @@ function parseSbtLine(
         scalaVersion ||
         (scalaVersionVariable &&
           variables[scalaVersionVariable] &&
-          variables[scalaVersionVariable].val),
+          normalizeScalaVersion(variables[scalaVersionVariable].val)),
     };
   if (deps.length) return { deps };
   return null;

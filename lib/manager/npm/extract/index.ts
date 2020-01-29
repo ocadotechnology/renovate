@@ -16,30 +16,13 @@ import {
 } from '../../common';
 import { NpmPackage } from './common';
 import { platform } from '../../../platform';
-
-export async function extractAllPackageFiles(
-  config: ExtractConfig,
-  packageFiles: string[]
-): Promise<PackageFile[]> {
-  const npmFiles: PackageFile[] = [];
-  for (const packageFile of packageFiles) {
-    const content = await platform.getFile(packageFile);
-    if (content) {
-      const deps = await extractPackageFile(content, packageFile, config);
-      if (deps) {
-        npmFiles.push({
-          packageFile,
-          manager: 'npm',
-          ...deps,
-        });
-      }
-    } else {
-      logger.info({ packageFile }, 'packageFile has no content');
-    }
-  }
-  await postExtract(npmFiles);
-  return npmFiles;
-}
+import { CONFIG_VALIDATION } from '../../../constants/error-messages';
+import { VERSION_SCHEME_NODE } from '../../../constants/version-schemes';
+import { MANAGER_NPM } from '../../../constants/managers';
+import {
+  DATASOURCE_GITHUB,
+  DATASOURCE_NPM,
+} from '../../../constants/data-binary-source';
 
 export async function extractPackageFile(
   content: string,
@@ -62,7 +45,7 @@ export async function extractPackageFile(
     return null;
   }
   if (fileName !== 'package.json' && packageJson.renovate) {
-    const error = new Error('config-validation');
+    const error = new Error(CONFIG_VALIDATION);
     error.configFile = fileName;
     error.validationError =
       'Nested package.json must not contain renovate configuration. Please use `packageRules` with `paths` in your main config instead.';
@@ -152,7 +135,11 @@ export async function extractPackageFile(
     volta: 'volta',
   };
 
-  function extractDependency(depType: string, depName: string, input: string) {
+  function extractDependency(
+    depType: string,
+    depName: string,
+    input: string
+  ): PackageDependency {
     const dep: PackageDependency = {};
     if (!validateNpmPackageName(depName).validForOldPackages) {
       dep.skipReason = 'invalid-name';
@@ -165,14 +152,14 @@ export async function extractPackageFile(
     dep.currentValue = input.trim();
     if (depType === 'engines') {
       if (depName === 'node') {
-        dep.datasource = 'github';
+        dep.datasource = DATASOURCE_GITHUB;
         dep.lookupName = 'nodejs/node';
-        dep.versionScheme = 'node';
+        dep.versionScheme = VERSION_SCHEME_NODE;
       } else if (depName === 'yarn') {
-        dep.datasource = 'npm';
+        dep.datasource = DATASOURCE_NPM;
         dep.commitMessageTopic = 'Yarn';
       } else if (depName === 'npm') {
-        dep.datasource = 'npm';
+        dep.datasource = DATASOURCE_NPM;
         dep.commitMessageTopic = 'npm';
       } else {
         dep.skipReason = 'unknown-engines';
@@ -186,11 +173,11 @@ export async function extractPackageFile(
     // support for volta
     if (depType === 'volta') {
       if (depName === 'node') {
-        dep.datasource = 'github';
+        dep.datasource = DATASOURCE_GITHUB;
         dep.lookupName = 'nodejs/node';
-        dep.versionScheme = 'node';
+        dep.versionScheme = VERSION_SCHEME_NODE;
       } else if (depName === 'yarn') {
-        dep.datasource = 'npm';
+        dep.datasource = DATASOURCE_NPM;
         dep.commitMessageTopic = 'Yarn';
       } else {
         dep.skipReason = 'unknown-volta';
@@ -220,7 +207,7 @@ export async function extractPackageFile(
       return dep;
     }
     if (isValid(dep.currentValue)) {
-      dep.datasource = 'npm';
+      dep.datasource = DATASOURCE_NPM;
       if (dep.currentValue === '*') {
         dep.skipReason = 'any-version';
       }
@@ -257,7 +244,7 @@ export async function extractPackageFile(
     if (isVersion(depRefPart)) {
       dep.currentRawValue = dep.currentValue;
       dep.currentValue = depRefPart;
-      dep.datasource = 'github';
+      dep.datasource = DATASOURCE_GITHUB;
       dep.lookupName = githubOwnerRepo;
       dep.pinDigests = false;
     } else if (
@@ -267,7 +254,7 @@ export async function extractPackageFile(
       dep.currentRawValue = dep.currentValue;
       dep.currentValue = null;
       dep.currentDigest = depRefPart;
-      dep.datasource = 'github';
+      dep.datasource = DATASOURCE_GITHUB;
       dep.lookupName = githubOwnerRepo;
     } else {
       dep.skipReason = 'unversioned-reference';
@@ -350,7 +337,31 @@ export async function extractPackageFile(
   };
 }
 
-export async function postExtract(packageFiles: PackageFile[]) {
-  await detectMonorepos(packageFiles);
+export async function postExtract(packageFiles: PackageFile[]): Promise<void> {
+  detectMonorepos(packageFiles);
   await getLockedVersions(packageFiles);
+}
+
+export async function extractAllPackageFiles(
+  config: ExtractConfig,
+  packageFiles: string[]
+): Promise<PackageFile[]> {
+  const npmFiles: PackageFile[] = [];
+  for (const packageFile of packageFiles) {
+    const content = await platform.getFile(packageFile);
+    if (content) {
+      const deps = await extractPackageFile(content, packageFile, config);
+      if (deps) {
+        npmFiles.push({
+          packageFile,
+          manager: MANAGER_NPM,
+          ...deps,
+        });
+      }
+    } else {
+      logger.info({ packageFile }, 'packageFile has no content');
+    }
+  }
+  await postExtract(npmFiles);
+  return npmFiles;
 }

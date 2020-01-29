@@ -11,6 +11,14 @@ describe('config/validation', () => {
       expect(warnings).toHaveLength(1);
       expect(warnings).toMatchSnapshot();
     });
+    it('catches invalid handlebars templates', async () => {
+      const config = {
+        commitMessage: '{{{something}}',
+      };
+      const { errors } = await configValidation.validateConfig(config);
+      expect(errors).toHaveLength(1);
+      expect(errors).toMatchSnapshot();
+    });
     it('returns nested errors', async () => {
       /** @type any */
       const config = {
@@ -20,7 +28,7 @@ describe('config/validation', () => {
         packageRules: [
           {
             packagePatterns: ['*'],
-            excludePackagePatterns: ['(x+x+)+y'],
+            excludePackagePatterns: ['abc ([a-z]+) ([a-z]+))'],
           },
         ],
         lockFileMaintenance: {
@@ -138,13 +146,14 @@ describe('config/validation', () => {
       expect(errors).toMatchSnapshot();
       expect(errors).toHaveLength(0);
     });
+
     it('errors for unsafe fileMatches', async () => {
       const config = {
         npm: {
           fileMatch: ['abc ([a-z]+) ([a-z]+))'],
         },
         docker: {
-          fileMatch: ['(x+x+)+y'],
+          fileMatch: ['x?+'],
         },
       };
       const { warnings, errors } = await configValidation.validateConfig(
@@ -153,6 +162,18 @@ describe('config/validation', () => {
       expect(warnings).toHaveLength(0);
       expect(errors).toHaveLength(2);
       expect(errors).toMatchSnapshot();
+    });
+
+    it('validates regEx for each fileMatch', async () => {
+      const config = {
+        fileMatch: ['js', '***$}{]]['],
+      };
+      const { warnings, errors } = await configValidation.validateConfig(
+        config,
+        true
+      );
+      expect(warnings).toHaveLength(0);
+      expect(errors).toHaveLength(1);
     });
   });
 });

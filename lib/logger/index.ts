@@ -97,9 +97,23 @@ loggerLevels.forEach(loggerLevel => {
   logger[loggerLevel] = logFactory(loggerLevel);
 });
 
-// setMeta overrides existing meta
-export function setMeta(obj: any) {
+// setMeta overrides existing meta, may remove fields if no longer existing
+export function setMeta(obj: any): void {
   meta = { ...obj };
+}
+
+// addMeta overrides or adds fields but does not remove any
+export function addMeta(obj: any): void {
+  meta = { ...meta, ...obj };
+}
+
+// removeMeta removes the provided fields from meta
+export function removeMeta(fields: string[]): void {
+  Object.keys(meta).forEach(key => {
+    if (fields.includes(key)) {
+      delete meta[key];
+    }
+  });
 }
 
 export /* istanbul ignore next */ function addStream(
@@ -112,6 +126,6 @@ export function levels(name: string, level: bunyan.LogLevel): void {
   bunyanLogger.levels(name, level);
 }
 
-export function getErrors() {
+export function getErrors(): any {
   return errors.getErrors();
 }

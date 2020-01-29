@@ -9,16 +9,26 @@ import { logger } from '../../logger';
 import got from '../../util/got';
 import * as hostRules from '../../util/host-rules';
 import { PkgReleaseConfig, ReleaseResult } from '../common';
+import { GotResponse } from '../../platform';
+import { DATASOURCE_FAILURE } from '../../constants/error-messages';
 
 // TODO: add got typings when available
 // TODO: replace www-authenticate with https://www.npmjs.com/package/auth-header ?
 
 const ecrRegex = /\d+\.dkr\.ecr\.([-a-z0-9]+)\.amazonaws\.com/;
 
-function getRegistryRepository(lookupName: string, registryUrls: string[]) {
+export interface RegistryRepository {
+  registry: string;
+  repository: string;
+}
+
+export function getRegistryRepository(
+  lookupName: string,
+  registryUrls: string[]
+): RegistryRepository {
   let registry: string;
   const split = lookupName.split('/');
-  if (split.length > 1 && split[0].includes('.')) {
+  if (split.length > 1 && (split[0].includes('.') || split[0].includes(':'))) {
     [registry] = split;
     split.shift();
   }
@@ -32,8 +42,8 @@ function getRegistryRepository(lookupName: string, registryUrls: string[]) {
   if (!registry.match('^https?://')) {
     registry = `https://${registry}`;
   }
-  const opts = hostRules.find({ url: registry });
-  if (opts.insecureRegistry) {
+  const opts = hostRules.find({ hostType: 'docker', url: registry });
+  if (opts && opts.insecureRegistry) {
     registry = registry.replace('https', 'http');
   }
   if (registry.endsWith('.docker.io') && !repository.includes('/')) {
@@ -43,6 +53,41 @@ function getRegistryRepository(lookupName: string, registryUrls: string[]) {
     registry,
     repository,
   };
+}
+
+function getECRAuthToken(
+  region: string,
+  opts: hostRules.HostRule
+): Promise<string | null> {
+  const config = { region, accessKeyId: undefined, secretAccessKey: undefined };
+  if (opts.username && opts.password) {
+    config.accessKeyId = opts.username;
+    config.secretAccessKey = opts.password;
+  }
+  const ecr = new AWS.ECR(config);
+  return new Promise<string>(resolve => {
+    ecr.getAuthorizationToken({}, (err, data) => {
+      if (err) {
+        logger.trace({ err }, 'err');
+        logger.info('ECR getAuthorizationToken error');
+        resolve(null);
+      } else {
+        const authorizationToken =
+          data &&
+          data.authorizationData &&
+          data.authorizationData[0] &&
+          data.authorizationData[0].authorizationToken;
+        if (authorizationToken) {
+          resolve(authorizationToken);
+        } else {
+          logger.warn(
+            'Could not extract authorizationToken from ECR getAuthorizationToken response'
+          );
+          resolve(null);
+        }
+      }
+    });
+  });
 }
 
 async function getAuthHeaders(
@@ -118,15 +163,15 @@ async function getAuthHeaders(
     if (err.name === 'RequestError' && registry.endsWith('docker.io')) {
       logger.debug({ err }, 'err');
       logger.info('Docker registry error: RequestError');
-      throw new Error('registry-failure');
+      throw new Error(DATASOURCE_FAILURE);
     }
     if (err.statusCode === 429 && registry.endsWith('docker.io')) {
       logger.warn({ err }, 'docker registry failure: too many requests');
-      throw new Error('registry-failure');
+      throw new Error(DATASOURCE_FAILURE);
     }
     if (err.statusCode >= 500 && err.statusCode < 600) {
       logger.warn({ err }, 'docker registry failure: internal error');
-      throw new Error('registry-failure');
+      throw new Error(DATASOURCE_FAILURE);
     }
     logger.warn(
       { registry, dockerRepository: repository, err },
@@ -136,22 +181,22 @@ async function getAuthHeaders(
   }
 }
 
-function digestFromManifestStr(str: hasha.HashaInput) {
+function digestFromManifestStr(str: hasha.HashaInput): string {
   return 'sha256:' + hasha(str, { algorithm: 'sha256' });
 }
 
-function extractDigestFromResponse(manifestResponse) {
+function extractDigestFromResponse(manifestResponse: GotResponse): string {
   if (manifestResponse.headers['docker-content-digest'] === undefined) {
     return digestFromManifestStr(manifestResponse.body);
   }
-  return manifestResponse.headers['docker-content-digest'];
+  return manifestResponse.headers['docker-content-digest'] as string;
 }
 
 async function getManifestResponse(
   registry: string,
   repository: string,
   tag: string
-) {
+): Promise<GotResponse> {
   logger.debug(`getManifestResponse(${registry}, ${repository}, ${tag})`);
   try {
     const headers = await getAuthHeaders(registry, repository);
@@ -166,7 +211,7 @@ async function getManifestResponse(
     });
     return manifestResponse;
   } catch (err) /* istanbul ignore next */ {
-    if (err.message === 'registry-failure') {
+    if (err.message === DATASOURCE_FAILURE) {
       throw err;
     }
     if (err.statusCode === 401) {
@@ -191,7 +236,7 @@ async function getManifestResponse(
     }
     if (err.statusCode === 429 && registry.endsWith('docker.io')) {
       logger.warn({ err }, 'docker registry failure: too many requests');
-      throw new Error('registry-failure');
+      throw new Error(DATASOURCE_FAILURE);
     }
     if (err.statusCode >= 500 && err.statusCode < 600) {
       logger.info(
@@ -203,7 +248,7 @@ async function getManifestResponse(
         },
         'docker registry failure: internal error'
       );
-      throw new Error('registry-failure');
+      throw new Error(DATASOURCE_FAILURE);
     }
     if (err.code === 'ETIMEDOUT') {
       logger.info(
@@ -267,7 +312,7 @@ export async function getDigest(
     await renovateCache.set(cacheNamespace, cacheKey, digest, cacheMinutes);
     return digest;
   } catch (err) /* istanbul ignore next */ {
-    if (err.message === 'registry-failure') {
+    if (err.message === DATASOURCE_FAILURE) {
       throw err;
     }
     logger.info(
@@ -322,7 +367,7 @@ async function getTags(
     await renovateCache.set(cacheNamespace, cacheKey, tags, cacheMinutes);
     return tags;
   } catch (err) /* istanbul ignore next */ {
-    if (err.message === 'registry-failure') {
+    if (err.message === DATASOURCE_FAILURE) {
       throw err;
     }
     logger.debug(
@@ -349,14 +394,14 @@ async function getTags(
         { registry, dockerRepository: repository, err },
         'docker registry failure: too many requests'
       );
-      throw new Error('registry-failure');
+      throw new Error(DATASOURCE_FAILURE);
     }
     if (err.statusCode >= 500 && err.statusCode < 600) {
       logger.warn(
         { registry, dockerRepository: repository, err },
         'docker registry failure: internal error'
       );
-      throw new Error('registry-failure');
+      throw new Error(DATASOURCE_FAILURE);
     }
     if (err.code === 'ETIMEDOUT') {
       logger.info(
@@ -371,6 +416,37 @@ async function getTags(
     );
     return null;
   }
+}
+
+export function getConfigResponse(
+  url: string,
+  headers: OutgoingHttpHeaders
+): Promise<GotResponse> {
+  return got(url, {
+    headers,
+    hooks: {
+      beforeRedirect: [
+        (options: any): void => {
+          if (
+            options.search &&
+            options.search.indexOf('X-Amz-Algorithm') !== -1
+          ) {
+            // if there is no port in the redirect URL string, then delete it from the redirect options.
+            // This can be evaluated for removal after upgrading to Got v10
+            const portInUrl = options.href.split('/')[2].split(':')[1];
+            if (!portInUrl) {
+              // eslint-disable-next-line no-param-reassign
+              delete options.port; // Redirect will instead use 80 or 443 for HTTP or HTTPS respectively
+            }
+
+            // docker registry is hosted on amazon, redirect url includes authentication.
+            // eslint-disable-next-line no-param-reassign
+            delete options.headers.authorization;
+          }
+        },
+      ],
+    },
+  });
 }
 
 /*
@@ -434,23 +510,7 @@ async function getLabels(
       return {};
     }
     const url = `${registry}/v2/${repository}/blobs/${configDigest}`;
-    const configResponse = await got(url, {
-      headers,
-      hooks: {
-        beforeRedirect: [
-          (options: any) => {
-            if (
-              options.search &&
-              options.search.indexOf('X-Amz-Algorithm') !== -1
-            ) {
-              // docker registry is hosted on amazon, redirect url includes authentication.
-              // eslint-disable-next-line no-param-reassign
-              delete options.headers.authorization;
-            }
-          },
-        ],
-      },
-    });
+    const configResponse = await getConfigResponse(url, headers);
     labels = JSON.parse(configResponse.body).config.Labels;
 
     if (labels) {
@@ -465,7 +525,7 @@ async function getLabels(
     await renovateCache.set(cacheNamespace, cacheKey, labels, cacheMinutes);
     return labels;
   } catch (err) {
-    if (err.message === 'registry-failure') {
+    if (err.message === DATASOURCE_FAILURE) {
       throw err;
     }
     if (err.statusCode === 401) {
@@ -546,36 +606,4 @@ export async function getPkgReleases({
     ret.sourceUrl = labels['org.opencontainers.image.source'];
   }
   return ret;
-}
-
-function getECRAuthToken(region: string, opts: hostRules.HostRule) {
-  const config = { region, accessKeyId: undefined, secretAccessKey: undefined };
-  if (opts.username && opts.password) {
-    config.accessKeyId = opts.username;
-    config.secretAccessKey = opts.password;
-  }
-  const ecr = new AWS.ECR(config);
-  return new Promise<string>(resolve => {
-    ecr.getAuthorizationToken({}, (err, data) => {
-      if (err) {
-        logger.trace({ err }, 'err');
-        logger.info('ECR getAuthorizationToken error');
-        resolve(null);
-      } else {
-        const authorizationToken =
-          data &&
-          data.authorizationData &&
-          data.authorizationData[0] &&
-          data.authorizationData[0].authorizationToken;
-        if (authorizationToken) {
-          resolve(authorizationToken);
-        } else {
-          logger.warn(
-            'Could not extract authorizationToken from ECR getAuthorizationToken response'
-          );
-          resolve(null);
-        }
-      }
-    });
-  });
 }

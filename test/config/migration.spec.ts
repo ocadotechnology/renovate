@@ -1,6 +1,7 @@
 import * as configMigration from '../../lib/config/migration';
 import { getConfig } from '../../lib/config/defaults';
 import { RenovateConfig } from '../../lib/config';
+import { PLATFORM_TYPE_GITHUB } from '../../lib/constants/platforms';
 
 const defaultConfig = getConfig();
 
@@ -10,7 +11,7 @@ describe('config/migration', () => {
       const config: RenovateConfig = {
         endpoints: [{}],
         enabled: true,
-        platform: 'github',
+        platform: PLATFORM_TYPE_GITHUB,
         hostRules: [
           {
             platform: 'docker',
@@ -22,12 +23,12 @@ describe('config/migration', () => {
         ],
         extends: [':js-app', 'config:library'],
         maintainYarnLock: true,
-        onboarding: 'false' as any,
+        onboarding: 'false' as never,
         multipleMajorPrs: true,
         gitFs: false,
         separateMajorReleases: true,
         separatePatchReleases: true,
-        automerge: 'none' as any,
+        automerge: 'none' as never,
         automergeMajor: false,
         automergeMinor: true,
         automergePatch: true,
@@ -41,8 +42,8 @@ describe('config/migration', () => {
           enabled: true,
         },
         meteor: true,
-        autodiscover: 'true',
-        schedule: 'on the last day of the month',
+        autodiscover: 'true' as never,
+        schedule: 'on the last day of the month' as never,
         commitMessage: '{{semanticPrefix}}some commit message',
         prTitle: '{{semanticPrefix}}some pr title',
         semanticPrefix: 'fix(deps): ',
@@ -58,7 +59,7 @@ describe('config/migration', () => {
         },
         packageRules: [
           {
-            packagePatterns: '^(@angular|typescript)' as any,
+            packagePatterns: '^(@angular|typescript)' as never,
             groupName: ['angular packages'],
             excludedPackageNames: 'foo',
           },
@@ -76,8 +77,8 @@ describe('config/migration', () => {
         lockFileMaintenance: {
           exposeEnv: false,
           gitFs: true,
-          automerge: 'any' as any,
-          schedule: 'before 5am every day',
+          automerge: 'any' as never,
+          schedule: 'before 5am every day' as never,
         },
         devDependencies: {
           automerge: 'minor',
@@ -117,10 +118,10 @@ describe('config/migration', () => {
     it('migrates before and after schedules', () => {
       const config = {
         major: {
-          schedule: 'after 10pm and before 7am',
+          schedule: 'after 10pm and before 7am' as never,
         },
         minor: {
-          schedule: 'after 10pm and before 7am on every weekday',
+          schedule: 'after 10pm and before 7am on every weekday' as never,
         },
       };
       const parentConfig = { ...defaultConfig };
@@ -144,7 +145,7 @@ describe('config/migration', () => {
     });
     it('migrates every friday', () => {
       const config = {
-        schedule: 'every friday',
+        schedule: 'every friday' as never,
       };
       const parentConfig = { ...defaultConfig };
       const { isMigrated, migratedConfig } = configMigration.migrateConfig(
@@ -168,7 +169,7 @@ describe('config/migration', () => {
     });
     it('does not migrate every weekday', () => {
       const config = {
-        schedule: 'every weekday',
+        schedule: 'every weekday' as never,
       };
       const parentConfig = { ...defaultConfig };
       const { isMigrated, migratedConfig } = configMigration.migrateConfig(
@@ -180,7 +181,7 @@ describe('config/migration', () => {
     });
     it('does not migrate multi days', () => {
       const config = {
-        schedule: 'after 5:00pm on wednesday and thursday',
+        schedule: 'after 5:00pm on wednesday and thursday' as never,
       };
       const parentConfig = { ...defaultConfig };
       const { isMigrated, migratedConfig } = configMigration.migrateConfig(
@@ -193,7 +194,7 @@ describe('config/migration', () => {
     });
     it('does not migrate hour range', () => {
       const config = {
-        schedule: 'after 1:00pm and before 5:00pm',
+        schedule: 'after 1:00pm and before 5:00pm' as never,
       };
       const parentConfig = { ...defaultConfig };
       const { isMigrated, migratedConfig } = configMigration.migrateConfig(
@@ -222,7 +223,7 @@ describe('config/migration', () => {
     });
     it('it overrides existing automerge setting', () => {
       const config: RenovateConfig = {
-        automerge: 'minor' as any,
+        automerge: 'minor' as never,
         packages: [
           {
             packagePatterns: '^(@angular|typescript)',

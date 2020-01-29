@@ -1,7 +1,7 @@
 import slugify from 'slugify';
 import handlebars from 'handlebars';
 import { clean as cleanGitRef } from 'clean-git-ref';
-import { logger, setMeta } from '../../../logger';
+import { logger, addMeta, removeMeta } from '../../../logger';
 
 import { generateBranchConfig } from './generate';
 import { flattenUpdates } from './flatten';
@@ -22,10 +22,11 @@ function cleanBranchName(branchName: string): string {
     .replace(/\s/g, ''); // whitespace
 }
 
+// TODO: fix return type
 export function branchifyUpgrades(
   config: RenovateConfig,
   packageFiles: Record<string, any[]>
-) {
+): RenovateConfig {
   logger.debug('branchifyUpgrades');
   const updates = flattenUpdates(config, packageFiles);
   logger.debug(
@@ -43,7 +44,8 @@ export function branchifyUpgrades(
     update.currentVersion = update.currentValue;
     update.newVersion = update.newVersion || update.newValue;
     // massage for handlebars
-    const upper = (str: string) => str.charAt(0).toUpperCase() + str.substr(1);
+    const upper = (str: string): string =>
+      str.charAt(0).toUpperCase() + str.substr(1);
     if (update.updateType) {
       update[`is${upper(update.updateType)}`] = true;
     }
@@ -86,17 +88,15 @@ export function branchifyUpgrades(
   }
   logger.debug(`Returning ${Object.keys(branchUpgrades).length} branch(es)`);
   for (const branchName of Object.keys(branchUpgrades)) {
-    setMeta({
-      repository: config.repository,
+    // Add branch name to metadata before generating branch config
+    addMeta({
       branch: branchName,
     });
     const branch = generateBranchConfig(branchUpgrades[branchName]);
     branch.branchName = branchName;
     branches.push(branch);
   }
-  setMeta({
-    repository: config.repository,
-  });
+  removeMeta(['branch']);
   logger.debug(`config.repoIsOnboarded=${config.repoIsOnboarded}`);
   const branchList = config.repoIsOnboarded
     ? branches.map(upgrade => upgrade.branchName)

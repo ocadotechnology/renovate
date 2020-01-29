@@ -2,6 +2,7 @@ import { compare, satisfies, ltr, minSatisfying, maxSatisfying } from 'semver';
 import { VersioningApiConstructor } from '../common';
 import { GenericVersion, GenericVersioningApi } from '../loose/generic';
 import { regEx } from '../../util/regex';
+import { CONFIG_VALIDATION } from '../../constants/error-messages';
 
 export interface RegExpVersion extends GenericVersion {
   /** prereleases are treated in the standard semver manner, if present */
@@ -11,6 +12,15 @@ export interface RegExpVersion extends GenericVersion {
    * never try to update to a version with a different compatibility.
    */
   compatibility: string;
+}
+
+// convenience method for passing a Version object into any semver.* method.
+function asSemver(version: RegExpVersion): string {
+  let vstring = `${version.release[0]}.${version.release[1]}.${version.release[2]}`;
+  if (typeof version.prerelease !== 'undefined') {
+    vstring += `-${version.prerelease}`;
+  }
+  return vstring;
 }
 
 export class RegExpVersioningApi extends GenericVersioningApi<RegExpVersion> {
@@ -38,7 +48,7 @@ export class RegExpVersioningApi extends GenericVersioningApi<RegExpVersion> {
       !new_config.includes('<minor>') &&
       !new_config.includes('<patch>')
     ) {
-      const error = new Error('config-validation');
+      const error = new Error(CONFIG_VALIDATION);
       error.configFile = new_config;
       error.validationError =
         'regex versionScheme needs at least one major, minor or patch group defined';
@@ -59,7 +69,7 @@ export class RegExpVersioningApi extends GenericVersioningApi<RegExpVersion> {
 
   // convenience method for passing a string into a Version given current config.
   protected _parse(version: string): RegExpVersion | null {
-    const match = version.match(this._config);
+    const match = version ? version.match(this._config) : null;
     if (match === null) {
       return null;
     }
@@ -104,21 +114,12 @@ export class RegExpVersioningApi extends GenericVersioningApi<RegExpVersion> {
     );
   }
 
-  matches(version: string, range: string) {
+  matches(version: string, range: string): boolean {
     return satisfies(
       asSemver(this._parse(version)),
       asSemver(this._parse(range))
     );
   }
-}
-
-// convenience method for passing a Version object into any semver.* method.
-function asSemver(version: RegExpVersion): string {
-  let vstring = `${version.release[0]}.${version.release[1]}.${version.release[2]}`;
-  if (typeof version.prerelease !== 'undefined') {
-    vstring += `-${version.prerelease}`;
-  }
-  return vstring;
 }
 
 export const api: VersioningApiConstructor = RegExpVersioningApi;

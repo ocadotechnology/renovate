@@ -1,5 +1,31 @@
-import { appName, appSlug, urls } from './app-strings';
 import { RenovateConfigStage } from './common';
+import {
+  VERSION_SCHEME_CARGO,
+  VERSION_SCHEME_COMPOSER,
+  VERSION_SCHEME_DOCKER,
+  VERSION_SCHEME_GIT,
+  VERSION_SCHEME_HEX,
+  VERSION_SCHEME_HASHICORP,
+  VERSION_SCHEME_IVY,
+  VERSION_SCHEME_LOOSE,
+  VERSION_SCHEME_MAVEN,
+  VERSION_SCHEME_NODE,
+  VERSION_SCHEME_NPM,
+  VERSION_SCHEME_NUGET,
+  VERSION_SCHEME_PEP440,
+  VERSION_SCHEME_POETRY,
+  VERSION_SCHEME_REGEX,
+  VERSION_SCHEME_RUBY,
+  VERSION_SCHEME_SEMVER,
+  VERSION_SCHEME_SWIFT,
+} from '../constants/version-schemes';
+import {
+  PLATFORM_TYPE_AZURE,
+  PLATFORM_TYPE_BITBUCKET,
+  PLATFORM_TYPE_BITBUCKET_SERVER,
+  PLATFORM_TYPE_GITHUB,
+  PLATFORM_TYPE_GITLAB,
+} from '../constants/platforms';
 
 export interface RenovateOptionBase {
   admin?: boolean;
@@ -38,7 +64,7 @@ export interface RenovateArrayOption<T extends string | object = any>
 
 export interface RenovateStringArrayOption extends RenovateArrayOption<string> {
   format?: 'regex';
-  subType: 'string';
+  subType: 'string' | 'object';
 }
 
 export interface RenovateBooleanOption extends RenovateOptionBase {
@@ -62,6 +88,7 @@ export interface RenovateStringOption extends RenovateOptionBase {
 
 export interface RenovateObjectOption extends RenovateOptionBase {
   default?: any;
+  additionalProperties?: {} | boolean;
   mergeable?: boolean;
   type: 'object';
 }
@@ -75,6 +102,40 @@ export type RenovateOptions =
   | RenovateObjectOption;
 
 const options: RenovateOptions[] = [
+  {
+    name: 'onboardingBranch',
+    description:
+      'Change this value in order to override the default onboarding branch name.',
+    type: 'string',
+    default: 'renovate/configure',
+    admin: true,
+    cli: false,
+  },
+  {
+    name: 'onboardingPrTitle',
+    description:
+      'Change this value in order to override the default onboarding PR title.',
+    type: 'string',
+    default: 'Configure Renovate',
+    admin: true,
+    cli: false,
+  },
+  {
+    name: 'productLinks',
+    description: 'Links which are embedded within PRs, issues, etc',
+    type: 'object',
+    admin: true,
+    mergeable: true,
+    default: {
+      documentation: 'https://docs.renovatebot.com/',
+      help: 'https://github.com/renovatebot/config-help/issues',
+      homepage: 'https://github.com/renovatebot/renovate',
+    },
+    additionalProperties: {
+      type: 'string',
+      format: 'uri',
+    },
+  },
   {
     name: 'extends',
     description:
@@ -108,7 +169,7 @@ const options: RenovateOptions[] = [
   },
   {
     name: 'enabled',
-    description: `Enable or disable ${appName}`,
+    description: `Enable or disable the bot`,
     stage: 'package',
     type: 'boolean',
     cli: false,
@@ -151,10 +212,11 @@ const options: RenovateOptions[] = [
   {
     name: 'binarySource',
     description:
-      'Where to source binaries like `npm` and `yarn` from, choices are `bundled`, `global` and `docker`',
+      'Where to source binaries like `npm` and `yarn` from, choices are `auto`, `global` and `docker`',
     admin: true,
     type: 'string',
-    default: 'bundled',
+    allowedValues: ['auto', 'global', 'docker'],
+    default: 'auto',
   },
   {
     name: 'baseDir',
@@ -284,7 +346,7 @@ const options: RenovateOptions[] = [
     name: 'masterIssueTitle',
     description: 'Title to use for the Master Issue',
     type: 'string',
-    default: `Update Dependencies (${appName} Bot)`,
+    default: `Update Dependencies (Renovate Bot)`,
   },
   {
     name: 'configWarningReuseIssue',
@@ -339,7 +401,7 @@ const options: RenovateOptions[] = [
   {
     name: 'persistRepoData',
     description:
-      'If set to false, repository data will preserved between runs instead of deleted.',
+      'If set to true, repository data will preserved between runs instead of deleted.',
     type: 'boolean',
     admin: true,
     default: false,
@@ -353,17 +415,25 @@ const options: RenovateOptions[] = [
     default: 'low',
   },
   {
+    name: 'ignoreScripts',
+    description:
+      'Configure this to true if trustLevel is high but you wish to skip running scripts when updating lock files',
+    stage: 'package',
+    type: 'boolean',
+    default: false,
+  },
+  {
     name: 'platform',
     description: 'Platform type of repository',
     type: 'string',
     allowedValues: [
-      'azure',
-      'bitbucket',
-      'bitbucket-server',
-      'github',
-      'gitlab',
+      PLATFORM_TYPE_AZURE,
+      PLATFORM_TYPE_BITBUCKET,
+      PLATFORM_TYPE_BITBUCKET_SERVER,
+      PLATFORM_TYPE_GITHUB,
+      PLATFORM_TYPE_GITLAB,
     ],
-    default: 'github',
+    default: PLATFORM_TYPE_GITHUB,
     admin: true,
   },
   {
@@ -448,6 +518,14 @@ const options: RenovateOptions[] = [
     default: null,
   },
   {
+    name: 'prCommitsPerRunLimit',
+    description:
+      'Set a maximum number of commits per Renovate run. Default is no limit.',
+    stage: 'global',
+    type: 'integer',
+    default: 0,
+  },
+  {
     name: 'repositories',
     description: 'List of Repositories',
     stage: 'global',
@@ -518,6 +596,16 @@ const options: RenovateOptions[] = [
     cli: false,
   },
   {
+    name: 'aliases',
+    description: 'Aliases for registries, package manager specific',
+    type: 'object',
+    default: {},
+    additionalProperties: {
+      type: 'string',
+      format: 'uri',
+    },
+  },
+  {
     name: 'registryUrls',
     description:
       'List of URLs to try for dependency lookup. Package manager-specific',
@@ -533,24 +621,26 @@ const options: RenovateOptions[] = [
     description: 'Version scheme to use for filtering and comparisons',
     type: 'string',
     allowedValues: [
-      'cargo',
-      'composer',
-      'docker',
-      'hashicorp',
-      'hex',
-      'ivy',
-      'loose',
-      'maven',
-      'node',
-      'npm',
-      'pep440',
-      'poetry',
-      'regex',
-      'ruby',
-      'semver',
-      'swift',
+      VERSION_SCHEME_CARGO,
+      VERSION_SCHEME_COMPOSER,
+      VERSION_SCHEME_DOCKER,
+      VERSION_SCHEME_GIT,
+      VERSION_SCHEME_HASHICORP,
+      VERSION_SCHEME_HEX,
+      VERSION_SCHEME_IVY,
+      VERSION_SCHEME_LOOSE,
+      VERSION_SCHEME_MAVEN,
+      VERSION_SCHEME_NODE,
+      VERSION_SCHEME_NPM,
+      VERSION_SCHEME_NUGET,
+      VERSION_SCHEME_PEP440,
+      VERSION_SCHEME_POETRY,
+      VERSION_SCHEME_REGEX,
+      VERSION_SCHEME_RUBY,
+      VERSION_SCHEME_SEMVER,
+      VERSION_SCHEME_SWIFT,
     ],
-    default: 'semver',
+    default: VERSION_SCHEME_SEMVER,
     cli: false,
     env: false,
   },
@@ -851,7 +941,7 @@ const options: RenovateOptions[] = [
     description: 'Prefix to use for all branch names',
     stage: 'branch',
     type: 'string',
-    default: `${appSlug}/`,
+    default: `renovate/`,
   },
   {
     name: 'bumpVersion',
@@ -1072,7 +1162,6 @@ const options: RenovateOptions[] = [
       'Config to apply when a PR is necessary due to vulnerability of existing package version.',
     type: 'object',
     default: {
-      enabled: true,
       groupName: null,
       schedule: [],
       masterIssueApproval: false,
@@ -1175,7 +1264,7 @@ const options: RenovateOptions[] = [
     name: 'prFooter',
     description: 'Pull Request footer template',
     type: 'string',
-    default: `This PR has been generated by [${appName} Bot](${urls.homepage}).`,
+    default: `This PR has been generated by [Renovate Bot](https://github.com/renovatebot/renovate).`,
     stage: 'global',
   },
   {
@@ -1275,8 +1364,16 @@ const options: RenovateOptions[] = [
     default: null,
   },
   {
+    name: 'additionalReviewers',
+    description:
+      'Additional reviewers for Pull Requests (in contrast to `reviewers`, this option adds to the existing reviewer list, rather than replacing it)',
+    type: 'array',
+    subType: 'string',
+    mergeable: true,
+  },
+  {
     name: 'fileMatch',
-    description: 'JS RegExp pattern for matching manager files',
+    description: 'RegEx (re2) pattern for matching manager files',
     type: 'array',
     subType: 'string',
     format: 'regex',
@@ -1302,7 +1399,7 @@ const options: RenovateOptions[] = [
     default: {
       fileMatch: ['(^|/)package.json$'],
       rollbackPrs: true,
-      versionScheme: 'npm',
+      versionScheme: VERSION_SCHEME_NPM,
       prBodyDefinitions: {
         Change:
           '[{{#if displayFrom}}`{{{displayFrom}}}` -> {{else}}{{#if currentValue}}`{{{currentValue}}}` -> {{/if}}{{/if}}{{#if displayTo}}`{{{displayTo}}}`{{else}}`{{{newValue}}}`{{/if}}](https://renovatebot.com/diffs/npm/{{{depNameEscaped}}}/{{{fromVersion}}}/{{{toVersion}}})',
@@ -1383,7 +1480,6 @@ const options: RenovateOptions[] = [
   },
   {
     name: 'ruby',
-    releaseStatus: 'alpha',
     description: 'Configuration object for ruby language',
     stage: 'package',
     type: 'object',
@@ -1393,14 +1489,12 @@ const options: RenovateOptions[] = [
   },
   {
     name: 'bundler',
-    releaseStatus: 'alpha',
     description: 'Configuration object for bundler Gemfiles',
     stage: 'package',
     type: 'object',
     default: {
-      enabled: false,
       fileMatch: ['(^|/)Gemfile$'],
-      versionScheme: 'ruby',
+      versionScheme: VERSION_SCHEME_RUBY,
     },
     mergeable: true,
   },
@@ -1411,39 +1505,37 @@ const options: RenovateOptions[] = [
     type: 'object',
     default: {
       fileMatch: ['(^|/)\\.ruby-version$'],
-      versionScheme: 'ruby',
+      versionScheme: VERSION_SCHEME_RUBY,
     },
     mergeable: true,
     cli: false,
   },
   {
     name: 'terraform',
-    description: 'Configuration object for Terraform module renovation',
+    description: 'Configuration object for Terraform dependencies renovation',
     stage: 'repository',
     type: 'object',
     default: {
-      commitMessageTopic: 'Terraform module {{depNameShort}}',
+      commitMessageTopic:
+        'Terraform {{managerData.terraformDependencyType}} {{depNameShort}}',
       fileMatch: ['\\.tf$'],
-      versionScheme: 'hashicorp',
+      versionScheme: VERSION_SCHEME_HASHICORP,
     },
     mergeable: true,
   },
   {
     name: 'mix',
-    releaseStatus: 'beta',
     description: 'Configuration object for Mix module renovation',
     stage: 'repository',
     type: 'object',
     default: {
-      enabled: false,
       fileMatch: ['(^|/)mix\\.exs$'],
-      versionScheme: 'hex',
+      versionScheme: VERSION_SCHEME_HEX,
     },
     mergeable: true,
   },
   {
     name: 'rust',
-    releaseStatus: 'unpublished',
     description: 'Configuration option for Rust package management.',
     stage: 'package',
     type: 'object',
@@ -1460,7 +1552,8 @@ const options: RenovateOptions[] = [
       commitMessageTopic: 'Rust crate {{depName}}',
       managerBranchPrefix: 'rust-',
       fileMatch: ['(^|/)Cargo.toml$'],
-      versionScheme: 'cargo',
+      versionScheme: VERSION_SCHEME_CARGO,
+      rangeStrategy: 'bump',
     },
     mergeable: true,
   },
@@ -1493,9 +1586,8 @@ const options: RenovateOptions[] = [
     stage: 'package',
     type: 'object',
     default: {
-      enabled: false,
       fileMatch: ['^.travis.yml$'],
-      versionScheme: 'node',
+      versionScheme: VERSION_SCHEME_NODE,
     },
     mergeable: true,
     cli: false,
@@ -1507,7 +1599,7 @@ const options: RenovateOptions[] = [
     type: 'object',
     default: {
       fileMatch: ['^.nvmrc$'],
-      versionScheme: 'node',
+      versionScheme: VERSION_SCHEME_NODE,
     },
     mergeable: true,
     cli: false,
@@ -1515,12 +1607,11 @@ const options: RenovateOptions[] = [
   {
     name: 'pub',
     description: 'Configuration object for when renovating Dart pubspec files',
-    releaseStatus: 'beta',
     stage: 'package',
     type: 'object',
     default: {
       fileMatch: ['(^|/)pubspec\\.ya?ml$'],
-      versionScheme: 'npm',
+      versionScheme: VERSION_SCHEME_NPM,
     },
     mergeable: true,
     cli: false,
@@ -1531,7 +1622,7 @@ const options: RenovateOptions[] = [
     stage: 'package',
     type: 'object',
     default: {
-      versionScheme: 'docker',
+      versionScheme: VERSION_SCHEME_DOCKER,
       managerBranchPrefix: 'docker-',
       commitMessageTopic: '{{{depName}}} Docker tag',
       major: { enabled: false },
@@ -1598,6 +1689,21 @@ const options: RenovateOptions[] = [
     cli: false,
   },
   {
+    name: 'helm-requirements',
+    description: 'Configuration object for helm requirements.yaml files.',
+    stage: 'package',
+    type: 'object',
+    default: {
+      aliases: {
+        stable: 'https://kubernetes-charts.storage.googleapis.com/',
+      },
+      commitMessageTopic: 'helm chart {{depName}}',
+      fileMatch: ['(^|/)requirements.yaml$'],
+    },
+    mergeable: true,
+    cli: false,
+  },
+  {
     name: 'circleci',
     description:
       'Configuration object for CircleCI yml renovation. Also inherits settings from `docker` object.',
@@ -1656,7 +1762,20 @@ const options: RenovateOptions[] = [
     type: 'object',
     default: {
       fileMatch: ['(^|/)([\\w-]*)composer.json$'],
-      versionScheme: 'composer',
+      versionScheme: VERSION_SCHEME_COMPOSER,
+    },
+    mergeable: true,
+    cli: false,
+  },
+  {
+    name: 'git-submodules',
+    description: 'Configuration object for git submodule files',
+    stage: 'package',
+    type: 'object',
+    default: {
+      enabled: false,
+      versionScheme: VERSION_SCHEME_GIT,
+      fileMatch: ['(^|/).gitmodules$'],
     },
     mergeable: true,
     cli: false,
@@ -1683,7 +1802,6 @@ const options: RenovateOptions[] = [
   },
   {
     name: 'pip_setup',
-    releaseStatus: 'beta',
     description: 'Configuration object for setup.py files',
     stage: 'package',
     type: 'object',
@@ -1695,7 +1813,6 @@ const options: RenovateOptions[] = [
   },
   {
     name: 'pipenv',
-    releaseStatus: 'beta',
     description: 'Configuration object for Pipfile files',
     stage: 'package',
     type: 'object',
@@ -1707,12 +1824,11 @@ const options: RenovateOptions[] = [
   },
   {
     name: 'poetry',
-    releaseStatus: 'beta',
     description: 'Configuration object for pyproject.toml files',
     stage: 'package',
     type: 'object',
     default: {
-      versionScheme: 'poetry',
+      versionScheme: VERSION_SCHEME_POETRY,
       fileMatch: ['(^|/)pyproject\\.toml$'],
     },
     mergeable: true,
@@ -1723,49 +1839,46 @@ const options: RenovateOptions[] = [
     stage: 'package',
     type: 'object',
     default: {
-      versionScheme: 'pep440',
+      versionScheme: VERSION_SCHEME_PEP440,
     },
     mergeable: true,
     cli: false,
   },
   {
     name: 'sbt',
-    releaseStatus: 'beta',
     description: 'Configuration object for *.sbt files',
     stage: 'package',
     type: 'object',
     default: {
-      fileMatch: ['\\.sbt$'],
+      fileMatch: ['\\.sbt$', 'project/[^/]*.scala$'],
       timeout: 300,
-      versionScheme: 'ivy',
+      versionScheme: VERSION_SCHEME_IVY,
     },
     mergeable: true,
     cli: false,
   },
   {
     name: 'leiningen',
-    releaseStatus: 'beta',
     description:
       'Configuration object for renovating Clojure leiningen projects',
     stage: 'package',
     type: 'object',
     default: {
       fileMatch: ['(^|/)project\\.clj$'],
-      versionScheme: 'maven',
+      versionScheme: VERSION_SCHEME_MAVEN,
     },
     mergeable: true,
     cli: false,
   },
   {
     name: 'deps-edn',
-    releaseStatus: 'beta',
     description:
       'Configuration object for renovating Clojure CLI-based projects (deps.edn)',
     stage: 'package',
     type: 'object',
     default: {
       fileMatch: ['(^|/)deps\\.edn$'],
-      versionScheme: 'maven',
+      versionScheme: VERSION_SCHEME_MAVEN,
     },
     mergeable: true,
     cli: false,
@@ -1789,14 +1902,13 @@ const options: RenovateOptions[] = [
   },
   {
     name: 'gradle',
-    releaseStatus: 'beta',
     description: 'Configuration object for build.gradle files',
     stage: 'package',
     type: 'object',
     default: {
       fileMatch: ['\\.gradle(\\.kts)?$', '(^|/)gradle.properties$'],
       timeout: 600,
-      versionScheme: 'maven',
+      versionScheme: VERSION_SCHEME_MAVEN,
     },
     mergeable: true,
     cli: false,
@@ -1819,7 +1931,7 @@ const options: RenovateOptions[] = [
     type: 'object',
     default: {
       fileMatch: ['\\.pom\\.xml$', '(^|/)pom\\.xml$'],
-      versionScheme: 'maven',
+      versionScheme: VERSION_SCHEME_MAVEN,
     },
     mergeable: true,
     cli: false,
@@ -1863,19 +1975,17 @@ const options: RenovateOptions[] = [
     stage: 'package',
     type: 'object',
     default: {
-      fileMatch: ['\\.csproj$'],
+      fileMatch: ['\\.(?:cs|fs|vb)proj$'],
     },
     mergeable: true,
     cli: false,
   },
   {
     name: 'homebrew',
-    releaseStatus: 'beta',
     description: 'Configuration object for homebrew',
     stage: 'package',
     type: 'object',
     default: {
-      enabled: true,
       commitMessageTopic: 'Homebrew Formula {{depName}}',
       managerBranchPrefix: 'homebrew-',
       fileMatch: ['^Formula/[^/]+[.]rb$'],
@@ -1887,6 +1997,7 @@ const options: RenovateOptions[] = [
     name: 'hostRules',
     description: 'Host rules/configuration including credentials',
     type: 'array',
+    subType: 'object',
     default: [
       {
         timeout: 60000,
@@ -2011,7 +2122,7 @@ const options: RenovateOptions[] = [
     type: 'object',
     default: {
       fileMatch: ['(^|/)Package\\.swift'],
-      versionScheme: 'swift',
+      versionScheme: VERSION_SCHEME_SWIFT,
       rangeStrategy: 'bump',
     },
     mergeable: true,
@@ -2037,6 +2148,6 @@ const options: RenovateOptions[] = [
   },
 ];
 
-export function getOptions() {
+export function getOptions(): any {
   return options;
 }

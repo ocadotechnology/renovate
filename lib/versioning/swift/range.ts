@@ -1,12 +1,12 @@
 import semver from 'semver';
-import { RangeStrategy } from '../common';
+import { NewValueConfig } from '../common';
 
 const fromParam = /^\s*from\s*:\s*"([^"]+)"\s*$/;
 const fromRange = /^\s*"([^"]+)"\s*\.\.\.\s*$/;
 const binaryRange = /^\s*"([^"]+)"\s*(\.\.[.<])\s*"([^"]+)"\s*$/;
 const toRange = /^\s*(\.\.[.<])\s*"([^"]+)"\s*$/;
 
-function toSemverRange(range: string) {
+function toSemverRange(range: string): string {
   if (fromParam.test(range)) {
     const [, version] = range.match(fromParam);
     if (semver.valid(version)) {
@@ -34,12 +34,7 @@ function toSemverRange(range: string) {
   return null;
 }
 
-function getNewValue(
-  currentValue: string,
-  _rangeStrategy: RangeStrategy,
-  _fromVersion: string,
-  toVersion: string
-) {
+function getNewValue({ currentValue, toVersion }: NewValueConfig): string {
   if (fromParam.test(currentValue)) {
     return toVersion;
   }

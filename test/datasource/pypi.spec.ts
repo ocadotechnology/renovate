@@ -1,6 +1,7 @@
 import fs from 'fs';
 import _got from '../../lib/util/got';
 import * as datasource from '../../lib/datasource';
+import { DATASOURCE_PYPI } from '../../lib/constants/data-binary-source';
 
 jest.mock('../../lib/util/got');
 
@@ -14,6 +15,9 @@ const htmlResponse = fs.readFileSync(
 );
 const badResponse = fs.readFileSync(
   'test/datasource/pypi/_fixtures/versions-html-badfile.html'
+);
+const mixedHyphensResponse = fs.readFileSync(
+  'test/datasource/pypi/_fixtures/versions-html-mixed-hyphens.html'
 );
 
 describe('datasource/pypi', () => {
@@ -38,7 +42,7 @@ describe('datasource/pypi', () => {
       got.mockReturnValueOnce({});
       expect(
         await datasource.getPkgReleases({
-          datasource: 'pypi',
+          datasource: DATASOURCE_PYPI,
           lookupName: 'something',
         })
       ).toBeNull();
@@ -49,7 +53,7 @@ describe('datasource/pypi', () => {
       });
       expect(
         await datasource.getPkgReleases({
-          datasource: 'pypi',
+          datasource: DATASOURCE_PYPI,
           lookupName: 'something',
         })
       ).toBeNull();
@@ -60,7 +64,7 @@ describe('datasource/pypi', () => {
       });
       expect(
         await datasource.getPkgReleases({
-          datasource: 'pypi',
+          datasource: DATASOURCE_PYPI,
           lookupName: 'azure-cli-monitor',
         })
       ).toMatchSnapshot();
@@ -74,7 +78,7 @@ describe('datasource/pypi', () => {
       };
       await datasource.getPkgReleases({
         ...config,
-        datasource: 'pypi',
+        datasource: DATASOURCE_PYPI,
         lookupName: 'azure-cli-monitor',
       });
       expect(got.mock.calls).toMatchSnapshot();
@@ -86,7 +90,7 @@ describe('datasource/pypi', () => {
       const pipIndexUrl = process.env.PIP_INDEX_URL;
       process.env.PIP_INDEX_URL = 'https://my.pypi.python/pypi/';
       await datasource.getPkgReleases({
-        datasource: 'pypi',
+        datasource: DATASOURCE_PYPI,
         lookupName: 'azure-cli-monitor',
       });
       expect(got.mock.calls).toMatchSnapshot();
@@ -107,7 +111,7 @@ describe('datasource/pypi', () => {
       };
       await datasource.getPkgReleases({
         ...config,
-        datasource: 'pypi',
+        datasource: DATASOURCE_PYPI,
         lookupName: 'azure-cli-monitor',
       });
       expect(got.mock.calls).toMatchSnapshot();
@@ -123,7 +127,7 @@ describe('datasource/pypi', () => {
       });
       expect(
         await datasource.getPkgReleases({
-          datasource: 'pypi',
+          datasource: DATASOURCE_PYPI,
           lookupName: 'something',
         })
       ).toMatchSnapshot();
@@ -139,7 +143,7 @@ describe('datasource/pypi', () => {
       });
       expect(
         await datasource.getPkgReleases({
-          datasource: 'pypi',
+          datasource: DATASOURCE_PYPI,
           lookupName: 'something',
         })
       ).toBeNull();
@@ -165,7 +169,7 @@ describe('datasource/pypi', () => {
       expect(
         await datasource.getPkgReleases({
           compatibility: { python: '2.7' },
-          datasource: 'pypi',
+          datasource: DATASOURCE_PYPI,
           lookupName: 'doit',
         })
       ).toMatchSnapshot();
@@ -181,7 +185,7 @@ describe('datasource/pypi', () => {
         await datasource.getPkgReleases({
           ...config,
           compatibility: { python: '2.7' },
-          datasource: 'pypi',
+          datasource: DATASOURCE_PYPI,
           depName: 'dj-database-url',
         })
       ).toMatchSnapshot();
@@ -197,12 +201,28 @@ describe('datasource/pypi', () => {
         await datasource.getPkgReleases({
           ...config,
           compatibility: { python: '2.7' },
-          datasource: 'pypi',
+          datasource: DATASOURCE_PYPI,
           depName: 'dj-database-url',
         })
       ).toMatchSnapshot();
     });
-    it('returns null for empty resonse', async () => {
+    it('process data from simple endpoint with hyphens replaced with underscores', async () => {
+      got.mockReturnValueOnce({
+        body: mixedHyphensResponse + '',
+      });
+      const config = {
+        registryUrls: ['https://pypi.org/simple/'],
+      };
+      expect(
+        await datasource.getPkgReleases({
+          ...config,
+          compatibility: { python: '2.7' },
+          datasource: DATASOURCE_PYPI,
+          depName: 'image-collector',
+        })
+      ).toMatchSnapshot();
+    });
+    it('returns null for empty response', async () => {
       got.mockReturnValueOnce({});
       const config = {
         registryUrls: ['https://pypi.org/simple/'],
@@ -211,7 +231,7 @@ describe('datasource/pypi', () => {
         await datasource.getPkgReleases({
           ...config,
           compatibility: { python: '2.7' },
-          datasource: 'pypi',
+          datasource: DATASOURCE_PYPI,
           depName: 'dj-database-url',
         })
       ).toBeNull();
@@ -227,7 +247,7 @@ describe('datasource/pypi', () => {
         await datasource.getPkgReleases({
           ...config,
           compatibility: { python: '2.7' },
-          datasource: 'pypi',
+          datasource: DATASOURCE_PYPI,
           depName: 'dj-database-url',
         })
       ).toBeNull();
@@ -243,7 +263,7 @@ describe('datasource/pypi', () => {
         await datasource.getPkgReleases({
           ...config,
           compatibility: { python: '2.7' },
-          datasource: 'pypi',
+          datasource: DATASOURCE_PYPI,
           depName: 'dj-database-url',
         })
       ).toEqual({ releases: [] });

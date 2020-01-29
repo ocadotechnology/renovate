@@ -1,68 +1,44 @@
-import { join } from 'upath';
-import { hrtime } from 'process';
-import { outputFile, readFile } from 'fs-extra';
-import { exec } from '../../util/exec';
-import { getChildProcessEnv } from '../../util/env';
+import { exec, ExecOptions } from '../../util/exec';
 import { logger } from '../../logger';
-import { UpdateArtifactsConfig, UpdateArtifactsResult } from '../common';
-import { platform } from '../../platform';
+import { UpdateArtifact, UpdateArtifactsResult } from '../common';
+import {
+  getSiblingFileName,
+  readLocalFile,
+  writeLocalFile,
+} from '../../util/fs';
 
-export async function updateArtifacts(
-  packageFileName: string,
-  updatedDeps: string[],
-  newPackageFileContent: string,
-  config: UpdateArtifactsConfig
-): Promise<UpdateArtifactsResult[] | null> {
-  await logger.debug(`cargo.updateArtifacts(${packageFileName})`);
+export async function updateArtifacts({
+  packageFileName,
+  updatedDeps,
+  newPackageFileContent,
+  config,
+}: UpdateArtifact): Promise<UpdateArtifactsResult[] | null> {
+  logger.debug(`cargo.updateArtifacts(${packageFileName})`);
   if (updatedDeps === undefined || updatedDeps.length < 1) {
     logger.debug('No updated cargo deps - returning null');
     return null;
   }
-  const lockFileName = 'Cargo.lock';
-  const existingLockFileContent = await platform.getFile(lockFileName);
+  const lockFileName = getSiblingFileName(packageFileName, 'Cargo.lock');
+  const existingLockFileContent = await readLocalFile(lockFileName);
   if (!existingLockFileContent) {
     logger.debug('No Cargo.lock found');
     return null;
   }
-  const localPackageFileName = join(config.localDir, packageFileName);
-  const localLockFileName = join(config.localDir, lockFileName);
-  let stdout: string;
-  let stderr: string;
   try {
-    await outputFile(localPackageFileName, newPackageFileContent);
+    await writeLocalFile(packageFileName, newPackageFileContent);
     logger.debug('Updating ' + lockFileName);
-    const cwd = config.localDir;
-    const env = getChildProcessEnv();
     for (let i = 0; i < updatedDeps.length; i += 1) {
       const dep = updatedDeps[i];
       // Update dependency `${dep}` in Cargo.lock file corresponding to Cargo.toml file located
       // at ${localPackageFileName} path
-      let cmd: string;
-      // istanbul ignore if
-      if (config.binarySource === 'docker') {
-        logger.info('Running cargo via docker');
-        cmd = `docker run --rm `;
-        // istanbul ignore if
-        if (config.dockerUser) {
-          cmd += `--user=${config.dockerUser} `;
-        }
-        const volumes = [cwd];
-        cmd += volumes.map(v => `-v ${v}:${v} `).join('');
-        const envVars = [];
-        cmd += envVars.map(e => `-e ${e} `).join('');
-        cmd += `-w ${cwd} `;
-        cmd += `renovate/rust cargo`;
-      } else {
-        logger.info('Running cargo via global cargo');
-        cmd = 'cargo';
-      }
-      cmd += ` update --manifest-path ${localPackageFileName} --package ${dep}`;
-      const startTime = hrtime();
+      let cmd = `cargo update --manifest-path ${packageFileName} --package ${dep}`;
+      const execOptions: ExecOptions = {
+        docker: {
+          image: 'renovate/rust',
+        },
+      };
       try {
-        ({ stdout, stderr } = await exec(cmd, {
-          cwd,
-          env,
-        }));
+        await exec(cmd, execOptions);
       } catch (err) /* istanbul ignore next */ {
         // Two different versions of one dependency can be present in the same
         // crate, and when that happens an attempt to update it with --package ${dep}
@@ -78,23 +54,14 @@ export async function updateArtifacts(
         const msgStart = 'error: There are multiple';
         if (err.code === 101 && err.stderr.startsWith(msgStart)) {
           cmd = cmd.replace(/ --package.*/, '');
-          ({ stdout, stderr } = await exec(cmd, {
-            cwd,
-            env,
-          }));
+          await exec(cmd, execOptions);
         } else {
           throw err; // this is caught below
         }
       }
-      const duration = hrtime(startTime);
-      const seconds = Math.round(duration[0] + duration[1] / 1e9);
-      logger.info(
-        { seconds, type: 'Cargo.lock', stdout, stderr },
-        'Updated lockfile'
-      );
     }
     logger.debug('Returning updated Cargo.lock');
-    const newCargoLockContent = await readFile(localLockFileName, 'utf8');
+    const newCargoLockContent = await readLocalFile(lockFileName);
     if (existingLockFileContent === newCargoLockContent) {
       logger.debug('Cargo.lock is unchanged');
       return null;
@@ -111,7 +78,7 @@ export async function updateArtifacts(
     logger.warn({ err }, 'Failed to update Cargo lock file');
     return [
       {
-        lockFileError: {
+        artifactError: {
           lockFile: lockFileName,
           stderr: err.message,
         },

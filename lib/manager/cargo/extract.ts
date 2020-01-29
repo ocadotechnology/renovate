@@ -3,6 +3,65 @@ import { logger } from '../../logger';
 import { isValid } from '../../versioning/cargo';
 import { PackageDependency, PackageFile } from '../common';
 import { CargoConfig, CargoSection } from './types';
+import { DATASOURCE_CARGO } from '../../constants/data-binary-source';
+
+function extractFromSection(
+  parsedContent: CargoSection,
+  section: keyof CargoSection,
+  target?: string
+): PackageDependency[] {
+  const deps: PackageDependency[] = [];
+  const sectionContent = parsedContent[section];
+  if (!sectionContent) {
+    return [];
+  }
+  Object.keys(sectionContent).forEach(depName => {
+    let skipReason: string;
+    let currentValue = sectionContent[depName];
+    let nestedVersion = false;
+    if (typeof currentValue !== 'string') {
+      const version = currentValue.version;
+      const path = currentValue.path;
+      const git = currentValue.git;
+      if (version) {
+        currentValue = version;
+        nestedVersion = true;
+        if (path) {
+          skipReason = 'path-dependency';
+        }
+        if (git) {
+          skipReason = 'git-dependency';
+        }
+      } else if (path) {
+        currentValue = '';
+        skipReason = 'path-dependency';
+      } else if (git) {
+        currentValue = '';
+        skipReason = 'git-dependency';
+      } else {
+        currentValue = '';
+        skipReason = 'invalid-dependency-specification';
+      }
+    }
+    const dep: PackageDependency = {
+      depName,
+      depType: section,
+      currentValue: currentValue as any,
+      managerData: { nestedVersion },
+      datasource: DATASOURCE_CARGO,
+    };
+    if (skipReason) {
+      dep.skipReason = skipReason;
+    } else if (!isValid(dep.currentValue)) {
+      dep.skipReason = 'unknown-version';
+    }
+    if (target) {
+      dep.target = target;
+    }
+    deps.push(dep);
+  });
+  return deps;
+}
 
 export function extractPackageFile(
   content: string,
@@ -49,62 +108,4 @@ export function extractPackageFile(
     return null;
   }
   return { deps };
-}
-
-function extractFromSection(
-  parsedContent: CargoSection,
-  section: keyof CargoSection,
-  target?: string
-): PackageDependency[] {
-  const deps: PackageDependency[] = [];
-  const sectionContent = parsedContent[section];
-  if (!sectionContent) {
-    return [];
-  }
-  Object.keys(sectionContent).forEach(depName => {
-    let skipReason: string;
-    let currentValue = sectionContent[depName];
-    let nestedVersion = false;
-    if (typeof currentValue !== 'string') {
-      const version = currentValue.version;
-      const path = currentValue.path;
-      const git = currentValue.git;
-      if (version) {
-        currentValue = version;
-        nestedVersion = true;
-        if (path) {
-          skipReason = 'path-dependency';
-        }
-        if (git) {
-          skipReason = 'git-dependency';
-        }
-      } else if (path) {
-        currentValue = '';
-        skipReason = 'path-dependency';
-      } else if (git) {
-        currentValue = '';
-        skipReason = 'git-dependency';
-      } else {
-        currentValue = '';
-        skipReason = 'invalid-dependency-specification';
-      }
-    }
-    const dep: PackageDependency = {
-      depName,
-      depType: section,
-      currentValue: currentValue as any,
-      managerData: { nestedVersion },
-      datasource: 'cargo',
-    };
-    if (skipReason) {
-      dep.skipReason = skipReason;
-    } else if (!isValid(dep.currentValue)) {
-      dep.skipReason = 'unknown-version';
-    }
-    if (target) {
-      dep.target = target;
-    }
-    deps.push(dep);
-  });
-  return deps;
 }

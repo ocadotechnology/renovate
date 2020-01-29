@@ -1,4 +1,3 @@
-import parse from 'github-url-from-git';
 import * as semver from 'semver';
 import { XmlDocument } from 'xmldoc';
 import { logger } from '../../logger';
@@ -9,7 +8,7 @@ import { ReleaseResult } from '../common';
 const defaultNugetFeed = 'https://api.nuget.org/v3/index.json';
 const cacheNamespace = 'datasource-nuget';
 
-export function getDefaultFeed() {
+export function getDefaultFeed(): string {
   return defaultNugetFeed;
 }
 
@@ -125,14 +124,12 @@ export async function getPkgReleases(
           return dep;
         }
         const nuspec = new XmlDocument(metaresult.body);
-        const sourceUrl = parse(
-          nuspec.valueWithPath('metadata.repository@url')
-        );
+        const sourceUrl = nuspec.valueWithPath('metadata.repository@url');
         if (sourceUrl) {
           dep.sourceUrl = sourceUrl;
         }
       } else if (match.projectUrl) {
-        dep.sourceUrl = parse(match.projectUrl);
+        dep.sourceUrl = match.projectUrl;
       }
     } catch (err) /* istanbul ignore next */ {
       logger.debug(

@@ -1,8 +1,11 @@
-import parse from 'github-url-from-git';
 import { XmlDocument, XmlElement } from 'xmldoc';
 import { logger } from '../../logger';
 import got from '../../util/got';
 import { ReleaseResult } from '../common';
+
+function getPkgProp(pkgInfo: XmlElement, propName: string): string {
+  return pkgInfo.childNamed('m:properties').childNamed(`d:${propName}`).val;
+}
 
 export async function getPkgReleases(
   feedUrl: string,
@@ -36,7 +39,10 @@ export async function getPkgReleases(
         try {
           const pkgIsLatestVersion = getPkgProp(pkgInfo, 'IsLatestVersion');
           if (pkgIsLatestVersion === 'true') {
-            dep.sourceUrl = parse(getPkgProp(pkgInfo, 'ProjectUrl'));
+            const projectUrl = getPkgProp(pkgInfo, 'ProjectUrl');
+            if (projectUrl) {
+              dep.sourceUrl = projectUrl;
+            }
           }
         } catch (err) /* istanbul ignore next */ {
           logger.debug(
@@ -64,8 +70,4 @@ export async function getPkgReleases(
     );
     return null;
   }
-}
-
-function getPkgProp(pkgInfo: XmlElement, propName: string) {
-  return pkgInfo.childNamed('m:properties').childNamed(`d:${propName}`).val;
 }

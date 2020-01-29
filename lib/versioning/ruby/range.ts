@@ -6,17 +6,24 @@ import { EQUAL, NOT_EQUAL, GT, LT, GTE, LTE, PGTE } from './operator';
 export interface Range {
   version: string;
   operator: string;
+  delimiter: string;
 }
 
 const parse = (range: string): Range => {
-  const regExp = /^([^\d\s]+)?\s?([0-9a-zA-Z-.-]+)$/g;
+  const regExp = /^(?<operator>[^\d\s]+)?(?<delimiter>\s*)(?<version>[0-9a-zA-Z-.-]+)$/;
 
   const value = (range || '').trim();
-  const matches = regExp.exec(value) || {};
+
+  const match = value.match(regExp);
+  if (match) {
+    const { version = null, operator = null, delimiter = ' ' } = match.groups;
+    return { version, operator, delimiter };
+  }
 
   return {
-    version: matches[2] || null,
-    operator: matches[1] || null,
+    version: null,
+    operator: null,
+    delimiter: ' ',
   };
 };
 
@@ -27,7 +34,7 @@ interface GemVersion {
 }
 type GemRequirement = [string, GemVersion];
 
-const ltr = (version: string, range: string) => {
+const ltr = (version: string, range: string): boolean => {
   const gemVersion: GemVersion = create(version);
   const requirements: GemRequirement[] = range.split(',').map(_parse);
 

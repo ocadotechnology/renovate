@@ -1,4 +1,5 @@
 import { Readable } from 'stream';
+import { GitPullRequestMergeStrategy } from 'azure-devops-node-api/interfaces/GitInterfaces';
 
 describe('platform/azure/helpers', () => {
   let azureHelper: typeof import('../../../lib/platform/azure/azure-helper');
@@ -100,63 +101,6 @@ describe('platform/azure/helpers', () => {
           } as any)
       );
       const res = await azureHelper.getAzureBranchObj('123', 'branchName');
-      expect(res).toMatchSnapshot();
-    });
-  });
-
-  describe('getChanges', () => {
-    it('should be get the commit obj formated (file to update)', async () => {
-      let eventCount = 0;
-      const mockEventStream = new Readable({
-        objectMode: true,
-        /* eslint-disable func-names */
-        /* eslint-disable object-shorthand */
-        read: function() {
-          if (eventCount < 1) {
-            eventCount += 1;
-            return this.push('{"hello": "test"}');
-          }
-          return this.push(null);
-        },
-      });
-
-      azureApi.gitApi.mockImplementationOnce(
-        () =>
-          ({
-            getItemText: jest.fn(() => mockEventStream),
-          } as any)
-      );
-
-      const res = await azureHelper.getChanges(
-        [
-          {
-            name: './myFilePath/test',
-            contents: 'Hello world!',
-          },
-        ],
-        '123',
-        'repository'
-      );
-      expect(res).toMatchSnapshot();
-    });
-    it('should be get the commit obj formated (file to create)', async () => {
-      azureApi.gitApi.mockImplementationOnce(
-        () =>
-          ({
-            getItemText: jest.fn(() => null),
-          } as any)
-      );
-
-      const res = await azureHelper.getChanges(
-        [
-          {
-            name: './myFilePath/test',
-            contents: 'Hello world!',
-          },
-        ],
-        '123',
-        'repository'
-      );
       expect(res).toMatchSnapshot();
     });
   });
@@ -339,6 +283,45 @@ describe('platform/azure/helpers', () => {
         Error(
           `prjName/myRepoName/blalba can be only structured this way : 'repository' or 'projectName/repository'!`
         )
+      );
+    });
+  });
+
+  describe('getMergeMethod', () => {
+    it('should default to NoFastForward', async () => {
+      azureApi.policyApi.mockImplementationOnce(
+        () =>
+          ({
+            getPolicyConfigurations: jest.fn(() => []),
+          } as any)
+      );
+      expect(await azureHelper.getMergeMethod('', '')).toEqual(
+        GitPullRequestMergeStrategy.NoFastForward
+      );
+    });
+    it('should return Squash', async () => {
+      azureApi.policyApi.mockImplementationOnce(
+        () =>
+          ({
+            getPolicyConfigurations: jest.fn(() => [
+              {
+                settings: {
+                  allowSquash: true,
+                  scope: [
+                    {
+                      repositoryId: '',
+                    },
+                  ],
+                },
+                type: {
+                  id: 'fa4e907d-c16b-4a4c-9dfa-4916e5d171ab',
+                },
+              },
+            ]),
+          } as any)
+      );
+      expect(await azureHelper.getMergeMethod('', '')).toEqual(
+        GitPullRequestMergeStrategy.Squash
       );
     });
   });

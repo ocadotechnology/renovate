@@ -8,13 +8,18 @@ import * as lerna from './lerna';
 import * as yarn from './yarn';
 import * as pnpm from './pnpm';
 import * as hostRules from '../../../util/host-rules';
-import { getChildProcessEnv } from '../../../util/env';
+import { getChildProcessEnv } from '../../../util/exec/env';
 import { PostUpdateConfig, PackageFile, Upgrade } from '../../common';
 import { platform } from '../../../platform';
+import {
+  SYSTEM_INSUFFICIENT_DISK_SPACE,
+  DATASOURCE_FAILURE,
+} from '../../../constants/error-messages';
 
 // Strips empty values, deduplicates, and returns the directories from filenames
 // istanbul ignore next
-const getDirs = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
+const getDirs = (arr: string[]): string[] =>
+  Array.from(new Set(arr.filter(Boolean)));
 
 export interface DetermineLockFileDirsResult {
   yarnLockDirs: string[];
@@ -109,7 +114,7 @@ export function determineLockFileDirs(
 export async function writeExistingFiles(
   config: PostUpdateConfig,
   packageFiles: AdditionalPackageFiles
-) {
+): Promise<void> {
   const lernaJson = await platform.getFile('lerna.json');
   if (lernaJson) {
     logger.debug(`Writing repo lerna.json (${config.localDir})`);
@@ -223,10 +228,8 @@ export async function writeExistingFiles(
         writtenLockFiles[yarnLock] = true;
       }
     }
-    // TODO: Update the below with this once https://github.com/pnpm/pnpm/issues/992 is fixed
-    const pnpmBug992 = true;
     // istanbul ignore next
-    if (packageFile.pnpmShrinkwrap && config.reuseLockFiles && !pnpmBug992) {
+    if (packageFile.pnpmShrinkwrap && config.reuseLockFiles) {
       logger.debug(`Writing pnpm-lock.yaml to ${basedir}`);
       const shrinkwrap = await platform.getFile(packageFile.pnpmShrinkwrap);
       await fs.outputFile(upath.join(basedir, 'pnpm-lock.yaml'), shrinkwrap);
@@ -237,7 +240,9 @@ export async function writeExistingFiles(
 }
 
 // istanbul ignore next
-export async function writeUpdatedPackageFiles(config: PostUpdateConfig) {
+export async function writeUpdatedPackageFiles(
+  config: PostUpdateConfig
+): Promise<void> {
   logger.trace({ config }, 'writeUpdatedPackageFiles');
   logger.debug('Writing any updated package files');
   if (!config.updatedPackageFiles) {
@@ -327,22 +332,20 @@ export async function getAdditionalFiles(
   await writeExistingFiles(config, packageFiles);
   await writeUpdatedPackageFiles(config);
 
-  process.env.NPM_CONFIG_CACHE =
-    process.env.NPM_CONFIG_CACHE || upath.join(config.cacheDir, './others/npm');
-  await fs.ensureDir(process.env.NPM_CONFIG_CACHE);
-  process.env.YARN_CACHE_FOLDER =
-    process.env.YARN_CACHE_FOLDER ||
-    upath.join(config.cacheDir, './others/yarn');
-  await fs.ensureDir(process.env.YARN_CACHE_FOLDER);
-  process.env.npm_config_store =
-    process.env.npm_config_store ||
-    upath.join(config.cacheDir, './others/pnpm');
-  await fs.ensureDir(process.env.npm_config_store);
   const env = getChildProcessEnv([
     'NPM_CONFIG_CACHE',
     'YARN_CACHE_FOLDER',
     'npm_config_store',
   ]);
+  env.NPM_CONFIG_CACHE =
+    env.NPM_CONFIG_CACHE || upath.join(config.cacheDir, './others/npm');
+  await fs.ensureDir(env.NPM_CONFIG_CACHE);
+  env.YARN_CACHE_FOLDER =
+    env.YARN_CACHE_FOLDER || upath.join(config.cacheDir, './others/yarn');
+  await fs.ensureDir(env.YARN_CACHE_FOLDER);
+  env.npm_config_store =
+    env.npm_config_store || upath.join(config.cacheDir, './others/pnpm');
+  await fs.ensureDir(env.npm_config_store);
   env.NODE_ENV = 'dev';
 
   let token = '';
@@ -382,7 +385,7 @@ export async function getAdditionalFiles(
               { dependency: upgrade.depName, type: 'npm' },
               'lock file failed for the dependency being updated - skipping branch creation'
             );
-            throw new Error('registry-failure');
+            throw new Error(DATASOURCE_FAILURE);
           }
         }
       }
@@ -434,7 +437,7 @@ export async function getAdditionalFiles(
               { dependency: upgrade.depName, type: 'yarn' },
               'lock file failed for the dependency being updated - skipping branch creation'
             );
-            throw new Error('registry-failure');
+            throw new Error(DATASOURCE_FAILURE);
           }
           /* eslint-enable no-useless-escape */
         }
@@ -520,7 +523,7 @@ export async function getAdditionalFiles(
               { dependency: upgrade.depName, type: 'pnpm' },
               'lock file failed for the dependency being updated - skipping branch creation'
             );
-            throw new Error('registry-failure');
+            throw new Error(DATASOURCE_FAILURE);
           }
         }
       }
@@ -576,7 +579,7 @@ export async function getAdditionalFiles(
         res.stderr &&
         res.stderr.includes('ENOSPC: no space left on device')
       ) {
-        throw new Error('disk-space');
+        throw new Error(SYSTEM_INSUFFICIENT_DISK_SPACE);
       }
       for (const upgrade of config.upgrades) {
         /* eslint-disable no-useless-escape */
@@ -589,7 +592,7 @@ export async function getAdditionalFiles(
             { dependency: upgrade.depName, type: 'yarn' },
             'lock file failed for the dependency being updated - skipping branch creation'
           );
-          throw new Error('registry-failure');
+          throw new Error(DATASOURCE_FAILURE);
         }
         /* eslint-enable no-useless-escape */
         if (
@@ -601,7 +604,7 @@ export async function getAdditionalFiles(
             { dependency: upgrade.depName, type: 'npm' },
             'lock file failed for the dependency being updated - skipping branch creation'
           );
-          throw new Error('registry-failure');
+          throw new Error(DATASOURCE_FAILURE);
         }
       }
       artifactErrors.push({

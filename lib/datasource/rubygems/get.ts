@@ -1,15 +1,17 @@
+import { OutgoingHttpHeaders } from 'http';
 import { logger } from '../../logger';
 import got from '../../util/got';
 import { maskToken } from '../../util/mask';
 import retriable from './retriable';
 import { UNAUTHORIZED, FORBIDDEN, NOT_FOUND } from './errors';
 import { ReleaseResult } from '../common';
+import { DATASOURCE_FAILURE } from '../../constants/error-messages';
 
 const INFO_PATH = '/api/v1/gems';
 const VERSIONS_PATH = '/api/v1/versions';
 
 // istanbul ignore next
-const processError = ({ err, ...rest }) => {
+const processError = ({ err, ...rest }): null => {
   const { statusCode, headers = {} } = err;
   const data = {
     ...rest,
@@ -28,16 +30,16 @@ const processError = ({ err, ...rest }) => {
       break;
     default:
       logger.debug(data, 'RubyGems lookup failure');
-      throw new Error('registry-failure');
+      throw new Error(DATASOURCE_FAILURE);
   }
   return null;
 };
 
-const getHeaders = () => {
+const getHeaders = (): OutgoingHttpHeaders => {
   return { hostType: 'rubygems' };
 };
 
-const fetch = async ({ dependency, registry, path }) => {
+const fetch = async ({ dependency, registry, path }): Promise<any> => {
   const json = true;
 
   const retry = { retries: retriable() };

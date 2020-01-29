@@ -1,9 +1,20 @@
 import fs from 'fs-extra';
-import { GotApi } from '../../../lib/platform/common';
+import { GotApi, GotResponse, RepoConfig } from '../../../lib/platform/common';
+import {
+  REPOSITORY_DISABLED,
+  REPOSITORY_NOT_FOUND,
+  REPOSITORY_RENAMED,
+} from '../../../lib/constants/error-messages';
+import {
+  BRANCH_STATUS_FAILED,
+  BRANCH_STATUS_PENDING,
+  BRANCH_STATUS_SUCCESS,
+} from '../../../lib/constants/branch-constants';
 
 describe('platform/github', () => {
   let github: typeof import('../../../lib/platform/github');
   let api: jest.Mocked<GotApi>;
+  let got: jest.Mock<Promise<Partial<GotResponse>>>;
   let hostRules: jest.Mocked<typeof import('../../../lib/util/host-rules')>;
   let GitStorage: jest.Mock<typeof import('../../../lib/platform/git/storage')>;
   beforeEach(async () => {
@@ -16,6 +27,7 @@ describe('platform/github', () => {
     jest.mock('../../../lib/util/got');
     api = (await import('../../../lib/platform/github/gh-got-wrapper'))
       .api as any;
+    got = (await import('../../../lib/util/got')).default as any;
     github = await import('../../../lib/platform/github');
     hostRules = (await import('../../../lib/util/host-rules')) as any;
     jest.mock('../../../lib/platform/git/storage');
@@ -167,7 +179,11 @@ describe('platform/github', () => {
     });
   });
 
-  function initRepo(args: { repository: string; token?: string }) {
+  function initRepo(args: {
+    repository: string;
+    token?: string;
+    forkMode?: boolean;
+  }) {
     // repo info
     api.get.mockImplementationOnce(
       () =>
@@ -190,6 +206,59 @@ describe('platform/github', () => {
       endpoint: 'https://github.com',
       repository: 'some/repo',
     } as any);
+  }
+
+  function forkInitRepo(args: any, repo?: string): Promise<RepoConfig> {
+    // repo info
+    api.get.mockImplementationOnce(
+      () =>
+        ({
+          body: {
+            owner: {
+              login: 'theowner',
+            },
+            default_branch: 'master',
+            allow_rebase_merge: true,
+            allow_squash_merge: true,
+            allow_merge_commit: true,
+          },
+        } as any)
+    );
+    // api.getBranchCommit
+    api.get.mockImplementationOnce(
+      () =>
+        ({
+          body: {
+            object: {
+              sha: '1234',
+            },
+          },
+        } as any)
+    );
+    // api.getRepos
+    api.get.mockImplementationOnce(
+      () =>
+        ({
+          body: repo
+            ? [
+                {
+                  full_name: repo,
+                },
+              ]
+            : [],
+        } as any)
+    );
+    // api.getBranchCommit
+    api.post.mockImplementationOnce(() => {
+      return {
+        body: repo
+          ? {
+              full_name: repo,
+            }
+          : {},
+      } as any;
+    });
+    return github.initRepo(args);
   }
 
   describe('initRepo', () => {
@@ -218,7 +287,7 @@ describe('platform/github', () => {
           repository: 'some/repo',
           optimizeForDisabled: true,
         } as any)
-      ).rejects.toThrow('disabled');
+      ).rejects.toThrow(REPOSITORY_DISABLED);
     });
     it('should rebase', async () => {
       function squashInitRepo(args: any) {
@@ -245,49 +314,6 @@ describe('platform/github', () => {
       expect(config).toMatchSnapshot();
     });
     it('should forks when forkMode', async () => {
-      function forkInitRepo(args: any) {
-        // repo info
-        api.get.mockImplementationOnce(
-          () =>
-            ({
-              body: {
-                owner: {
-                  login: 'theowner',
-                },
-                default_branch: 'master',
-                allow_rebase_merge: true,
-                allow_squash_merge: true,
-                allow_merge_commit: true,
-              },
-            } as any)
-        );
-        // api.getBranchCommit
-        api.get.mockImplementationOnce(
-          () =>
-            ({
-              body: {
-                object: {
-                  sha: '1234',
-                },
-              },
-            } as any)
-        );
-        // api.getRepos
-        api.get.mockImplementationOnce(
-          () =>
-            ({
-              body: [],
-            } as any)
-        );
-        // api.getBranchCommit
-        api.post.mockImplementationOnce(
-          () =>
-            ({
-              body: {},
-            } as any)
-        );
-        return github.initRepo(args);
-      }
       const config = await forkInitRepo({
         repository: 'some/repo',
         forkMode: true,
@@ -295,57 +321,13 @@ describe('platform/github', () => {
       expect(config).toMatchSnapshot();
     });
     it('should update fork when forkMode', async () => {
-      function forkInitRepo(args: any) {
-        // repo info
-        api.get.mockImplementationOnce(
-          () =>
-            ({
-              body: {
-                owner: {
-                  login: 'theowner',
-                },
-                default_branch: 'master',
-                allow_rebase_merge: true,
-                allow_squash_merge: true,
-                allow_merge_commit: true,
-              },
-            } as any)
-        );
-        // api.getBranchCommit
-        api.get.mockImplementationOnce(
-          () =>
-            ({
-              body: {
-                object: {
-                  sha: '1234',
-                },
-              },
-            } as any)
-        );
-        // api.getRepos
-        api.get.mockImplementationOnce(
-          () =>
-            ({
-              body: [
-                {
-                  full_name: 'forked_repo',
-                },
-              ],
-            } as any)
-        );
-        // fork
-        api.post.mockImplementationOnce(
-          () =>
-            ({
-              body: { full_name: 'forked_repo' },
-            } as any)
-        );
-        return github.initRepo(args);
-      }
-      const config = await forkInitRepo({
-        repository: 'some/repo',
-        forkMode: true,
-      });
+      const config = await forkInitRepo(
+        {
+          repository: 'some/repo',
+          forkMode: true,
+        },
+        'forked_repo'
+      );
       expect(config).toMatchSnapshot();
     });
     it('should squash', async () => {
@@ -441,7 +423,7 @@ describe('platform/github', () => {
         github.initRepo({
           repository: 'some/repo',
         } as any)
-      ).rejects.toThrow('not-found');
+      ).rejects.toThrow(REPOSITORY_NOT_FOUND);
     });
     it('should throw error if renamed', async () => {
       api.get.mockReturnValueOnce({
@@ -456,7 +438,7 @@ describe('platform/github', () => {
           includeForks: true,
           repository: 'some/repo',
         } as any)
-      ).rejects.toThrow('renamed');
+      ).rejects.toThrow(REPOSITORY_RENAMED);
     });
   });
   describe('getRepoForceRebase', () => {
@@ -543,7 +525,18 @@ describe('platform/github', () => {
       api.get.mockImplementationOnce(
         () =>
           ({
-            body: [{ number: 91, head: { ref: 'somebranch' }, state: 'open' }],
+            body: [
+              {
+                number: 90,
+                head: { ref: 'somebranch', repo: { full_name: 'other/repo' } },
+                state: 'open',
+              },
+              {
+                number: 91,
+                head: { ref: 'somebranch', repo: { full_name: 'some/repo' } },
+                state: 'open',
+              },
+            ],
           } as any)
       );
       api.get.mockImplementationOnce(
@@ -557,7 +550,53 @@ describe('platform/github', () => {
               base: {
                 sha: '1234',
               },
-              head: { ref: 'somebranch' },
+              head: { ref: 'somebranch', repo: { full_name: 'some/repo' } },
+              state: 'open',
+            },
+          } as any)
+      );
+      api.get.mockResolvedValue({ body: { object: { sha: '12345' } } } as any);
+      const pr = await github.getBranchPr('somebranch');
+      expect(api.get.mock.calls).toMatchSnapshot();
+      expect(pr).toMatchSnapshot();
+    });
+    it('should return the PR object in fork mode', async () => {
+      await forkInitRepo(
+        {
+          repository: 'some/repo',
+          forkMode: true,
+        },
+        'forked/repo'
+      );
+      api.get.mockImplementationOnce(
+        () =>
+          ({
+            body: [
+              {
+                number: 90,
+                head: { ref: 'somebranch', repo: { full_name: 'other/repo' } },
+                state: 'open',
+              },
+              {
+                number: 91,
+                head: { ref: 'somebranch', repo: { full_name: 'some/repo' } },
+                state: 'open',
+              },
+            ],
+          } as any)
+      );
+      api.get.mockImplementationOnce(
+        () =>
+          ({
+            body: {
+              number: 90,
+              additions: 1,
+              deletions: 1,
+              commits: 1,
+              base: {
+                sha: '1234',
+              },
+              head: { ref: 'somebranch', repo: { full_name: 'other/repo' } },
               state: 'open',
             },
           } as any)
@@ -574,14 +613,14 @@ describe('platform/github', () => {
         repository: 'some/repo',
       });
       const res = await github.getBranchStatus('somebranch', null);
-      expect(res).toEqual('success');
+      expect(res).toEqual(BRANCH_STATUS_SUCCESS);
     });
     it('return failed if unsupported requiredStatusChecks', async () => {
       await initRepo({
         repository: 'some/repo',
       });
       const res = await github.getBranchStatus('somebranch', ['foo']);
-      expect(res).toEqual('failed');
+      expect(res).toEqual(BRANCH_STATUS_FAILED);
     });
     it('should pass through success', async () => {
       await initRepo({
@@ -596,7 +635,7 @@ describe('platform/github', () => {
           } as any)
       );
       const res = await github.getBranchStatus('somebranch', []);
-      expect(res).toEqual('success');
+      expect(res).toEqual(BRANCH_STATUS_SUCCESS);
     });
     it('should pass through failed', async () => {
       await initRepo({
@@ -611,7 +650,7 @@ describe('platform/github', () => {
           } as any)
       );
       const res = await github.getBranchStatus('somebranch', []);
-      expect(res).toEqual('failed');
+      expect(res).toEqual(BRANCH_STATUS_FAILED);
     });
     it('should fail if a check run has failed', async () => {
       await initRepo({
@@ -649,7 +688,7 @@ describe('platform/github', () => {
           } as any)
       );
       const res = await github.getBranchStatus('somebranch', []);
-      expect(res).toEqual('failed');
+      expect(res).toEqual(BRANCH_STATUS_FAILED);
     });
     it('should suceed if no status and all passed check runs', async () => {
       await initRepo({
@@ -687,7 +726,7 @@ describe('platform/github', () => {
           } as any)
       );
       const res = await github.getBranchStatus('somebranch', []);
-      expect(res).toEqual('success');
+      expect(res).toEqual(BRANCH_STATUS_SUCCESS);
     });
     it('should fail if a check run has failed', async () => {
       await initRepo({
@@ -724,7 +763,7 @@ describe('platform/github', () => {
           } as any)
       );
       const res = await github.getBranchStatus('somebranch', []);
-      expect(res).toEqual('pending');
+      expect(res).toEqual(BRANCH_STATUS_PENDING);
     });
   });
   describe('getBranchStatusCheck', () => {
@@ -801,13 +840,13 @@ describe('platform/github', () => {
             ],
           } as any)
       );
-      await github.setBranchStatus(
-        'some-branch',
-        'some-context',
-        'some-description',
-        'some-state',
-        'some-url'
-      );
+      await github.setBranchStatus({
+        branchName: 'some-branch',
+        context: 'some-context',
+        description: 'some-description',
+        state: 'some-state',
+        url: 'some-url',
+      });
       expect(api.post).toHaveBeenCalledTimes(0);
     });
     it('sets branch status', async () => {
@@ -844,84 +883,84 @@ describe('platform/github', () => {
             },
           } as any)
       );
-      await github.setBranchStatus(
-        'some-branch',
-        'some-context',
-        'some-description',
-        'some-state',
-        'some-url'
-      );
+      api.get.mockResolvedValueOnce({
+        body: {},
+      } as any);
+      api.get.mockResolvedValueOnce({
+        body: {},
+      } as any);
+      await github.setBranchStatus({
+        branchName: 'some-branch',
+        context: 'some-context',
+        description: 'some-description',
+        state: 'some-state',
+        url: 'some-url',
+      });
       expect(api.post).toHaveBeenCalledTimes(1);
     });
   });
   describe('findIssue()', () => {
     beforeEach(() => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 2,
-                        state: 'open',
-                        title: 'title-2',
-                      },
-                      {
-                        number: 1,
-                        state: 'open',
-                        title: 'title-1',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 2,
+                    state: 'open',
+                    title: 'title-2',
+                  },
+                  {
+                    number: 1,
+                    state: 'open',
+                    title: 'title-1',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
+            },
+          },
+        },
+      });
     });
     it('returns null if no issue', async () => {
       const res = await github.findIssue('title-3');
       expect(res).toBeNull();
     });
     it('finds issue', async () => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 2,
-                        state: 'open',
-                        title: 'title-2',
-                      },
-                      {
-                        number: 1,
-                        state: 'open',
-                        title: 'title-1',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 2,
+                    state: 'open',
+                    title: 'title-2',
+                  },
+                  {
+                    number: 1,
+                    state: 'open',
+                    title: 'title-1',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
+            },
+          },
+        },
+      });
       api.get.mockReturnValueOnce({ body: { body: 'new-content' } } as any);
       const res = await github.findIssue('title-2');
       expect(res).not.toBeNull();
@@ -929,356 +968,349 @@ describe('platform/github', () => {
   });
   describe('ensureIssue()', () => {
     it('creates issue', async () => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 2,
-                        state: 'open',
-                        title: 'title-2',
-                      },
-                      {
-                        number: 1,
-                        state: 'open',
-                        title: 'title-1',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 2,
+                    state: 'open',
+                    title: 'title-2',
+                  },
+                  {
+                    number: 1,
+                    state: 'open',
+                    title: 'title-1',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
-      const res = await github.ensureIssue('new-title', 'new-content');
+            },
+          },
+        },
+      });
+      const res = await github.ensureIssue({
+        title: 'new-title',
+        body: 'new-content',
+      });
       expect(res).toEqual('created');
     });
     it('creates issue if not ensuring only once', async () => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 2,
-                        state: 'open',
-                        title: 'title-2',
-                      },
-                      {
-                        number: 1,
-                        state: 'closed',
-                        title: 'title-1',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 2,
+                    state: 'open',
+                    title: 'title-2',
+                  },
+                  {
+                    number: 1,
+                    state: 'closed',
+                    title: 'title-1',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
-      const res = await github.ensureIssue('title-1', 'new-content');
+            },
+          },
+        },
+      });
+      const res = await github.ensureIssue({
+        title: 'title-1',
+        body: 'new-content',
+      });
       expect(res).toBeNull();
     });
     it('does not create issue if ensuring only once', async () => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 2,
-                        state: 'open',
-                        title: 'title-2',
-                      },
-                      {
-                        number: 1,
-                        state: 'closed',
-                        title: 'title-1',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 2,
+                    state: 'open',
+                    title: 'title-2',
+                  },
+                  {
+                    number: 1,
+                    state: 'closed',
+                    title: 'title-1',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
+            },
+          },
+        },
+      });
       const once = true;
-      const res = await github.ensureIssue('title-1', 'new-content', once);
+      const res = await github.ensureIssue({
+        title: 'title-1',
+        body: 'new-content',
+        once,
+      });
       expect(res).toBeNull();
     });
     it('closes others if ensuring only once', async () => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 3,
-                        state: 'open',
-                        title: 'title-1',
-                      },
-                      {
-                        number: 2,
-                        state: 'open',
-                        title: 'title-2',
-                      },
-                      {
-                        number: 1,
-                        state: 'closed',
-                        title: 'title-1',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 3,
+                    state: 'open',
+                    title: 'title-1',
+                  },
+                  {
+                    number: 2,
+                    state: 'open',
+                    title: 'title-2',
+                  },
+                  {
+                    number: 1,
+                    state: 'closed',
+                    title: 'title-1',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
+            },
+          },
+        },
+      });
       const once = true;
-      const res = await github.ensureIssue('title-1', 'new-content', once);
+      const res = await github.ensureIssue({
+        title: 'title-1',
+        body: 'new-content',
+        once,
+      });
       expect(res).toBeNull();
     });
     it('updates issue', async () => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 2,
-                        state: 'open',
-                        title: 'title-2',
-                      },
-                      {
-                        number: 1,
-                        state: 'open',
-                        title: 'title-1',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 2,
+                    state: 'open',
+                    title: 'title-2',
+                  },
+                  {
+                    number: 1,
+                    state: 'open',
+                    title: 'title-1',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
+            },
+          },
+        },
+      });
       api.get.mockReturnValueOnce({ body: { body: 'new-content' } } as any);
-      const res = await github.ensureIssue('title-2', 'newer-content');
+      const res = await github.ensureIssue({
+        title: 'title-2',
+        body: 'newer-content',
+      });
       expect(res).toEqual('updated');
     });
     it('skips update if unchanged', async () => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 2,
-                        state: 'open',
-                        title: 'title-2',
-                      },
-                      {
-                        number: 1,
-                        state: 'open',
-                        title: 'title-1',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 2,
+                    state: 'open',
+                    title: 'title-2',
+                  },
+                  {
+                    number: 1,
+                    state: 'open',
+                    title: 'title-1',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
+            },
+          },
+        },
+      });
       api.get.mockReturnValueOnce({ body: { body: 'newer-content' } } as any);
-      const res = await github.ensureIssue('title-2', 'newer-content');
+      const res = await github.ensureIssue({
+        title: 'title-2',
+        body: 'newer-content',
+      });
       expect(res).toBeNull();
     });
     it('deletes if duplicate', async () => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 2,
-                        state: 'open',
-                        title: 'title-1',
-                      },
-                      {
-                        number: 1,
-                        state: 'open',
-                        title: 'title-1',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 2,
+                    state: 'open',
+                    title: 'title-1',
+                  },
+                  {
+                    number: 1,
+                    state: 'open',
+                    title: 'title-1',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
+            },
+          },
+        },
+      });
       api.get.mockReturnValueOnce({ body: { body: 'newer-content' } } as any);
-      const res = await github.ensureIssue('title-1', 'newer-content');
+      const res = await github.ensureIssue({
+        title: 'title-1',
+        body: 'newer-content',
+      });
       expect(res).toBeNull();
     });
     it('creates issue if reopen flag false and issue is not open', async () => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 2,
-                        state: 'close',
-                        title: 'title-2',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 2,
+                    state: 'close',
+                    title: 'title-2',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
+            },
+          },
+        },
+      });
       api.get.mockReturnValueOnce({ body: { body: 'new-content' } } as any);
-      const res = await github.ensureIssue(
-        'title-2',
-        'new-content',
-        false,
-        false
-      );
+      const res = await github.ensureIssue({
+        title: 'title-2',
+        body: 'new-content',
+        once: false,
+        shouldReOpen: false,
+      });
       expect(res).toEqual('created');
     });
     it('does not create issue if reopen flag false and issue is already open', async () => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 2,
-                        state: 'open',
-                        title: 'title-2',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 2,
+                    state: 'open',
+                    title: 'title-2',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
+            },
+          },
+        },
+      });
       api.get.mockReturnValueOnce({ body: { body: 'new-content' } } as any);
-      const res = await github.ensureIssue(
-        'title-2',
-        'new-content',
-        false,
-        false
-      );
+      const res = await github.ensureIssue({
+        title: 'title-2',
+        body: 'new-content',
+        once: false,
+        shouldReOpen: false,
+      });
       expect(res).toEqual(null);
     });
   });
   describe('ensureIssueClosing()', () => {
     it('closes issue', async () => {
-      api.post.mockImplementationOnce(
-        () =>
-          ({
-            body: JSON.stringify({
-              data: {
-                repository: {
-                  issues: {
-                    pageInfo: {
-                      startCursor: null,
-                      hasNextPage: false,
-                      endCursor: null,
-                    },
-                    nodes: [
-                      {
-                        number: 2,
-                        state: 'open',
-                        title: 'title-2',
-                      },
-                      {
-                        number: 1,
-                        state: 'open',
-                        title: 'title-1',
-                      },
-                    ],
-                  },
+      got.mockResolvedValueOnce({
+        body: {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: {
+                  startCursor: null,
+                  hasNextPage: false,
+                  endCursor: null,
                 },
+                nodes: [
+                  {
+                    number: 2,
+                    state: 'open',
+                    title: 'title-2',
+                  },
+                  {
+                    number: 1,
+                    state: 'open',
+                    title: 'title-1',
+                  },
+                ],
               },
-            }),
-          } as any)
-      );
+            },
+          },
+        },
+      });
       await github.ensureIssueClosing('title-2');
     });
   });
@@ -1320,7 +1352,11 @@ describe('platform/github', () => {
         repository: 'some/repo',
       });
       api.get.mockReturnValueOnce({ body: [] } as any);
-      await github.ensureComment(42, 'some-subject', 'some\ncontent');
+      await github.ensureComment({
+        number: 42,
+        topic: 'some-subject',
+        content: 'some\ncontent',
+      });
       expect(api.post).toHaveBeenCalledTimes(2);
       expect(api.post.mock.calls[1]).toMatchSnapshot();
     });
@@ -1334,7 +1370,11 @@ describe('platform/github', () => {
             body: graphqlClosedPullrequests,
           } as any)
       );
-      await github.ensureComment(2499, 'some-subject', 'some\ncontent');
+      await github.ensureComment({
+        number: 2499,
+        topic: 'some-subject',
+        content: 'some\ncontent',
+      });
       expect(api.post).toHaveBeenCalledTimes(2);
       expect(api.patch).toHaveBeenCalledTimes(0);
     });
@@ -1345,7 +1385,11 @@ describe('platform/github', () => {
       api.get.mockReturnValueOnce({
         body: [{ id: 1234, body: '### some-subject\n\nblablabla' }],
       } as any);
-      await github.ensureComment(42, 'some-subject', 'some\ncontent');
+      await github.ensureComment({
+        number: 42,
+        topic: 'some-subject',
+        content: 'some\ncontent',
+      });
       expect(api.post).toHaveBeenCalledTimes(1);
       expect(api.patch).toHaveBeenCalledTimes(1);
       expect(api.patch.mock.calls).toMatchSnapshot();
@@ -1357,7 +1401,11 @@ describe('platform/github', () => {
       api.get.mockReturnValueOnce({
         body: [{ id: 1234, body: '### some-subject\n\nsome\ncontent' }],
       } as any);
-      await github.ensureComment(42, 'some-subject', 'some\ncontent');
+      await github.ensureComment({
+        number: 42,
+        topic: 'some-subject',
+        content: 'some\ncontent',
+      });
       expect(api.post).toHaveBeenCalledTimes(1);
       expect(api.patch).toHaveBeenCalledTimes(0);
     });
@@ -1368,7 +1416,11 @@ describe('platform/github', () => {
       api.get.mockReturnValueOnce({
         body: [{ id: 1234, body: '!merge' }],
       } as any);
-      await github.ensureComment(42, null, '!merge');
+      await github.ensureComment({
+        number: 42,
+        topic: null,
+        content: '!merge',
+      });
       expect(api.post).toHaveBeenCalledTimes(1);
       expect(api.patch).toHaveBeenCalledTimes(0);
     });
@@ -1395,7 +1447,9 @@ describe('platform/github', () => {
           },
         ],
       } as any);
-      const res = await github.findPr('branch-a', null);
+      const res = await github.findPr({
+        branchName: 'branch-a',
+      });
       expect(res).toBeDefined();
     });
     it('returns true if not open', async () => {
@@ -1409,7 +1463,10 @@ describe('platform/github', () => {
           },
         ],
       } as any);
-      const res = await github.findPr('branch-a', null, '!open');
+      const res = await github.findPr({
+        branchName: 'branch-a',
+        state: '!open',
+      });
       expect(res).toBeDefined();
     });
     it('caches pr list', async () => {
@@ -1423,13 +1480,20 @@ describe('platform/github', () => {
           },
         ],
       } as any);
-      let res = await github.findPr('branch-a', null);
+      let res = await github.findPr({ branchName: 'branch-a' });
       expect(res).toBeDefined();
-      res = await github.findPr('branch-a', 'branch a pr');
+      res = await github.findPr({
+        branchName: 'branch-a',
+        prTitle: 'branch a pr',
+      });
       expect(res).toBeDefined();
-      res = await github.findPr('branch-a', 'branch a pr', 'open');
+      res = await github.findPr({
+        branchName: 'branch-a',
+        prTitle: 'branch a pr',
+        state: 'open',
+      });
       expect(res).toBeDefined();
-      res = await github.findPr('branch-b');
+      res = await github.findPr({ branchName: 'branch-b' });
       expect(res).not.toBeDefined();
     });
   });
@@ -1459,14 +1523,20 @@ describe('platform/github', () => {
             },
           } as any)
       );
-      const pr = await github.createPr(
-        'some-branch',
-        'The Title',
-        'Hello world',
-        ['deps', 'renovate'],
-        false,
-        { statusCheckVerify: true }
-      );
+      api.get.mockResolvedValueOnce({
+        body: {},
+      } as any);
+      api.get.mockResolvedValueOnce({
+        body: [],
+      } as any);
+      const pr = await github.createPr({
+        branchName: 'some-branch',
+        prTitle: 'The Title',
+        prBody: 'Hello world',
+        labels: ['deps', 'renovate'],
+        useDefaultBranch: false,
+        platformOptions: { statusCheckVerify: true },
+      });
       expect(pr).toMatchSnapshot();
       expect(api.post.mock.calls).toMatchSnapshot();
     });
@@ -1480,13 +1550,13 @@ describe('platform/github', () => {
             },
           } as any)
       );
-      const pr = await github.createPr(
-        'some-branch',
-        'The Title',
-        'Hello world',
-        null,
-        true
-      );
+      const pr = await github.createPr({
+        branchName: 'some-branch',
+        prTitle: 'The Title',
+        prBody: 'Hello world',
+        labels: null,
+        useDefaultBranch: true,
+      });
       expect(pr).toMatchSnapshot();
       expect(api.post.mock.calls).toMatchSnapshot();
     });

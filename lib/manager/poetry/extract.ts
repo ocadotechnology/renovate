@@ -3,34 +3,7 @@ import { isValid } from '../../versioning/poetry';
 import { logger } from '../../logger';
 import { PackageFile, PackageDependency } from '../common';
 import { PoetryFile, PoetrySection } from './types';
-
-export function extractPackageFile(
-  content: string,
-  fileName: string
-): PackageFile | null {
-  logger.trace(`poetry.extractPackageFile(${fileName})`);
-  let pyprojectfile: PoetryFile;
-  try {
-    pyprojectfile = parse(content);
-  } catch (err) {
-    logger.debug({ err }, 'Error parsing pyproject.toml file');
-    return null;
-  }
-  if (!(pyprojectfile.tool && pyprojectfile.tool.poetry)) {
-    logger.debug(`${fileName} contains no poetry section`);
-    return null;
-  }
-  const deps = [
-    ...extractFromSection(pyprojectfile, 'dependencies'),
-    ...extractFromSection(pyprojectfile, 'dev-dependencies'),
-    ...extractFromSection(pyprojectfile, 'extras'),
-  ];
-  if (!deps.length) {
-    return null;
-  }
-
-  return { deps, registryUrls: extractRegistries(pyprojectfile) };
-}
+import { DATASOURCE_PYPI } from '../../constants/data-binary-source';
 
 function extractFromSection(
   parsedFile: PoetryFile,
@@ -74,7 +47,7 @@ function extractFromSection(
       depType: section,
       currentValue: currentValue as string,
       managerData: { nestedVersion },
-      datasource: 'pypi',
+      datasource: DATASOURCE_PYPI,
     };
     if (skipReason) {
       dep.skipReason = skipReason;
@@ -105,4 +78,32 @@ function extractRegistries(pyprojectfile: PoetryFile): string[] {
   registryUrls.add('https://pypi.org/pypi/');
 
   return Array.from(registryUrls);
+}
+
+export function extractPackageFile(
+  content: string,
+  fileName: string
+): PackageFile | null {
+  logger.trace(`poetry.extractPackageFile(${fileName})`);
+  let pyprojectfile: PoetryFile;
+  try {
+    pyprojectfile = parse(content);
+  } catch (err) {
+    logger.debug({ err }, 'Error parsing pyproject.toml file');
+    return null;
+  }
+  if (!(pyprojectfile.tool && pyprojectfile.tool.poetry)) {
+    logger.debug(`${fileName} contains no poetry section`);
+    return null;
+  }
+  const deps = [
+    ...extractFromSection(pyprojectfile, 'dependencies'),
+    ...extractFromSection(pyprojectfile, 'dev-dependencies'),
+    ...extractFromSection(pyprojectfile, 'extras'),
+  ];
+  if (!deps.length) {
+    return null;
+  }
+
+  return { deps, registryUrls: extractRegistries(pyprojectfile) };
 }

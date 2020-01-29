@@ -2,10 +2,11 @@ import { logger } from '../../logger';
 import { isValid } from '../../versioning/ruby';
 import { PackageFile, PackageDependency } from '../common';
 import { platform } from '../../platform';
+import { regEx } from '../../util/regex';
+import { extractLockFileEntries } from './locked-version';
+import { DATASOURCE_RUBYGEMS } from '../../constants/data-binary-source';
 
-export { extractPackageFile };
-
-async function extractPackageFile(
+export async function extractPackageFile(
   content: string,
   fileName?: string
 ): Promise<PackageFile | null> {
@@ -22,7 +23,7 @@ async function extractPackageFile(
       sourceMatch =
         sourceMatch ||
         line.match(
-          new RegExp(`^source ${delimiter}([^${delimiter}]+)${delimiter}\\s*$`)
+          regEx(`^source ${delimiter}([^${delimiter}]+)${delimiter}\\s*$`)
         );
     }
     if (sourceMatch) {
@@ -32,9 +33,7 @@ async function extractPackageFile(
     for (const delimiter of delimiters) {
       rubyMatch =
         rubyMatch ||
-        line.match(
-          new RegExp(`^ruby ${delimiter}([^${delimiter}]+)${delimiter}`)
-        );
+        line.match(regEx(`^ruby ${delimiter}([^${delimiter}]+)${delimiter}`));
     }
     if (rubyMatch) {
       res.compatibility = { ruby: rubyMatch[1] };
@@ -43,9 +42,9 @@ async function extractPackageFile(
     let gemDelimiter: string;
     for (const delimiter of delimiters) {
       const gemMatchRegex = `^gem ${delimiter}([^${delimiter}]+)${delimiter}(,\\s+${delimiter}([^${delimiter}]+)${delimiter}){0,2}`;
-      if (line.match(new RegExp(gemMatchRegex))) {
+      if (line.match(regEx(gemMatchRegex))) {
         gemDelimiter = delimiter;
-        gemMatch = gemMatch || line.match(new RegExp(gemMatchRegex));
+        gemMatch = gemMatch || line.match(regEx(gemMatchRegex));
       }
     }
     if (gemMatch) {
@@ -56,7 +55,7 @@ async function extractPackageFile(
       if (gemMatch[3]) {
         dep.currentValue = gemMatch[0]
           .substring(`gem ${gemDelimiter}${dep.depName}${gemDelimiter},`.length)
-          .replace(new RegExp(gemDelimiter, 'g'), '')
+          .replace(regEx(gemDelimiter, 'g'), '')
           .trim();
         if (!isValid(dep.currentValue)) {
           dep.skipReason = 'invalid-value';
@@ -65,7 +64,7 @@ async function extractPackageFile(
         dep.skipReason = 'no-version';
       }
       if (!dep.skipReason) {
-        dep.datasource = 'rubygems';
+        dep.datasource = DATASOURCE_RUBYGEMS;
       }
       res.deps.push(dep);
     }
@@ -100,7 +99,7 @@ async function extractPackageFile(
     }
     for (const delimiter of delimiters) {
       const sourceBlockMatch = line.match(
-        new RegExp(`^source\\s+${delimiter}(.*?)${delimiter}\\s+do`)
+        regEx(`^source\\s+${delimiter}(.*?)${delimiter}\\s+do`)
       );
       if (sourceBlockMatch) {
         const repositoryUrl = sourceBlockMatch[1];
@@ -110,6 +109,11 @@ async function extractPackageFile(
         while (lineNumber < lines.length && sourceLine !== 'end') {
           lineNumber += 1;
           sourceLine = lines[lineNumber];
+          // istanbul ignore if
+          if (!sourceLine) {
+            logger.error({ content, fileName }, 'Undefined sourceLine');
+            sourceLine = 'end';
+          }
           if (sourceLine !== 'end') {
             sourceContent += sourceLine.replace(/^ {2}/, '') + '\n';
           }
@@ -182,11 +186,19 @@ async function extractPackageFile(
   if (!res.deps.length && !res.registryUrls.length) {
     return null;
   }
+
   if (fileName) {
     const gemfileLock = fileName + '.lock';
     const lockContent = await platform.getFile(gemfileLock);
     if (lockContent) {
       logger.debug({ packageFile: fileName }, 'Found Gemfile.lock file');
+      const lockedEntries = extractLockFileEntries(lockContent);
+      for (const dep of res.deps) {
+        const lockedDepValue = lockedEntries.get(dep.depName);
+        if (lockedDepValue) {
+          dep.lockedVersion = lockedDepValue;
+        }
+      }
       const bundledWith = lockContent.match(/\nBUNDLED WITH\n\s+(.*?)(\n|$)/);
       if (bundledWith) {
         res.compatibility = res.compatibility || {};

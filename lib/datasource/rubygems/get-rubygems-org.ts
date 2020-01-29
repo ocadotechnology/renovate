@@ -1,12 +1,16 @@
 import got from '../../util/got';
 import { logger } from '../../logger';
 import { ReleaseResult } from '../common';
+import { DATASOURCE_FAILURE } from '../../constants/error-messages';
 
 let lastSync = new Date('2000-01-01');
 let packageReleases: Record<string, string[]> = Object.create(null); // Because we might need a "constructor" key
 let contentLength = 0;
 
-async function updateRubyGemsVersions() {
+/* https://bugs.chromium.org/p/v8/issues/detail?id=2869 */
+const copystr = (x: string): string => (' ' + x).slice(1);
+
+async function updateRubyGemsVersions(): Promise<void> {
   const url = 'https://rubygems.org/versions';
   const options = {
     headers: {
@@ -23,14 +27,14 @@ async function updateRubyGemsVersions() {
       logger.warn({ err }, 'Rubygems error - resetting cache');
       contentLength = 0;
       packageReleases = Object.create(null); // Because we might need a "constructor" key
-      throw new Error('registry-failure');
+      throw new Error(DATASOURCE_FAILURE);
     }
     logger.debug('Rubygems: No update');
     lastSync = new Date();
     return;
   }
 
-  function processLine(line: string) {
+  function processLine(line: string): void {
     let split: string[];
     let pkg: string;
     let versions: string;
@@ -41,6 +45,7 @@ async function updateRubyGemsVersions() {
       }
       split = l.split(' ');
       [pkg, versions] = split;
+      pkg = copystr(pkg);
       packageReleases[pkg] = packageReleases[pkg] || [];
       const lineVersions = versions.split(',').map(version => version.trim());
       for (const lineVersion of lineVersions) {
@@ -51,7 +56,7 @@ async function updateRubyGemsVersions() {
             version => version !== deletedVersion
           );
         } else {
-          packageReleases[pkg].push(lineVersion);
+          packageReleases[pkg].push(copystr(lineVersion));
         }
       }
     } catch (err) /* istanbul ignore next */ {
@@ -68,14 +73,14 @@ async function updateRubyGemsVersions() {
   lastSync = new Date();
 }
 
-function isDataStale() {
+function isDataStale(): boolean {
   const minutesElapsed = Math.floor(
     (new Date().getTime() - lastSync.getTime()) / (60 * 1000)
   );
   return minutesElapsed >= 5;
 }
 
-async function syncVersions() {
+async function syncVersions(): Promise<void> {
   if (isDataStale()) {
     global.updateRubyGemsVersions =
       global.updateRubyGemsVersions || updateRubyGemsVersions();

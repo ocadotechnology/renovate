@@ -1,6 +1,7 @@
 import fs from 'fs';
 import _got from '../../lib/util/got';
 import * as datasource from '../../lib/datasource';
+import { DATASOURCE_GRADLE_VERSION } from '../../lib/constants/data-binary-source';
 
 jest.mock('../../lib/util/got');
 
@@ -16,7 +17,7 @@ describe('datasource/gradle', () => {
   describe('getPkgReleases', () => {
     beforeEach(() => {
       config = {
-        datasource: 'gradleVersion',
+        datasource: DATASOURCE_GRADLE_VERSION,
       };
       jest.clearAllMocks();
       global.repoCache = {};
@@ -61,6 +62,27 @@ describe('datasource/gradle', () => {
         body: JSON.parse(allResponse),
       });
       const res = await datasource.getPkgReleases(config);
+      expect(got).toHaveBeenCalledTimes(1);
+      expect(got.mock.calls[0][0]).toEqual(
+        'https://services.gradle.org/versions/all'
+      );
+      expect(res).toMatchSnapshot();
+      expect(res).not.toBeNull();
+    });
+
+    it('calls configured registryUrls', async () => {
+      got.mockReturnValue({
+        body: JSON.parse(allResponse),
+      });
+      const res = await datasource.getPkgReleases({
+        ...config,
+        registryUrls: ['https://foo.bar', 'http://baz.qux'],
+      });
+      expect(got).toHaveBeenCalledTimes(2);
+      expect(got.mock.calls[0][0]).toEqual('https://foo.bar');
+      expect(got.mock.calls[1][0]).toEqual('http://baz.qux');
+      // This will have every release duplicated, because we used the same
+      // mocked data for both responses.
       expect(res).toMatchSnapshot();
       expect(res).not.toBeNull();
     });

@@ -1,6 +1,7 @@
 import { join } from 'path';
 import { writeFile, exists, readFile } from 'fs-extra';
 import { logger } from '../../logger';
+import { DATASOURCE_SBT } from '../../constants/data-binary-source';
 
 const GRADLE_DEPENDENCY_REPORT_FILENAME = 'gradle-renovate-report.json';
 
@@ -27,7 +28,7 @@ export interface BuildDependency {
   registryUrls?: string[];
 }
 
-async function createRenovateGradlePlugin(localDir: string) {
+async function createRenovateGradlePlugin(localDir: string): Promise<void> {
   const content = `
 import groovy.json.JsonOutput
 import org.gradle.api.internal.artifacts.dependencies.DefaultExternalModuleDependency
@@ -46,9 +47,9 @@ allprojects {
            .unique()
         project.repositories = repos
         def deps = (buildscript.configurations + configurations)
-          .collect { it.dependencies }
+          .collect { it.dependencies + it.dependencyConstraints }
           .flatten()
-          .findAll { it instanceof DefaultExternalModuleDependency }
+          .findAll { it instanceof DefaultExternalModuleDependency || it instanceof DependencyConstraint }
           .collect { ['name':it.name, 'group':it.group, 'version':it.version] }
         project.dependencies = deps
     }
@@ -65,19 +66,6 @@ gradle.buildFinished {
     'Creating renovate-plugin.gradle file with renovate gradle plugin'
   );
   await writeFile(gradleInitFile, content);
-}
-
-async function extractDependenciesFromUpdatesReport(
-  localDir: string
-): Promise<BuildDependency[]> {
-  const gradleProjectConfigurations = await readGradleReport(localDir);
-
-  const dependencies = gradleProjectConfigurations
-    .map(mergeDependenciesWithRepositories, [])
-    .reduce(flatternDependencies, [])
-    .reduce(combineReposOnDuplicatedDependencies, []);
-
-  return dependencies.map(gradleModule => buildDependency(gradleModule));
 }
 
 async function readGradleReport(localDir: string): Promise<GradleProject[]> {
@@ -146,6 +134,35 @@ function buildDependency(
     currentValue: gradleModule.version,
     registryUrls: gradleModule.repos,
   };
+}
+
+async function extractDependenciesFromUpdatesReport(
+  localDir: string
+): Promise<BuildDependency[]> {
+  const gradleProjectConfigurations = await readGradleReport(localDir);
+
+  const dependencies = gradleProjectConfigurations
+    .map(mergeDependenciesWithRepositories, [])
+    .reduce(flatternDependencies, [])
+    .reduce(combineReposOnDuplicatedDependencies, []);
+
+  return dependencies
+    .map(gradleModule => buildDependency(gradleModule))
+    .map(dep => {
+      /* https://github.com/renovatebot/renovate/issues/4627 */
+      const { depName, currentValue } = dep;
+      if (depName.endsWith('_%%')) {
+        return {
+          ...dep,
+          depName: depName.replace(/_%%/, ''),
+          datasource: DATASOURCE_SBT,
+        };
+      }
+      if (/^%.*%$/.test(currentValue)) {
+        return { ...dep, skipReason: 'version-placeholder' };
+      }
+      return dep;
+    });
 }
 
 export {

@@ -3,6 +3,13 @@ import parse from 'github-url-from-git';
 import { parse as _parse } from 'url';
 import { logger } from '../../logger';
 import { PackageDependency, PackageFile } from '../common';
+import { regEx } from '../../util/regex';
+import { VERSION_SCHEME_DOCKER } from '../../constants/version-schemes';
+import {
+  DATASOURCE_DOCKER,
+  DATASOURCE_GITHUB,
+  DATASOURCE_GO,
+} from '../../constants/data-binary-source';
 
 interface UrlParsedResult {
   repo: string;
@@ -78,7 +85,7 @@ function parseContent(content: string): string[] {
     (acc, prefix) => [
       ...acc,
       ...content
-        .split(new RegExp(prefix + '\\s*\\(', 'g'))
+        .split(regEx(prefix + '\\s*\\(', 'g'))
         .slice(1)
         .map(base => {
           const ind = findBalancedParenIndex(base);
@@ -172,10 +179,11 @@ export function extractPackageFile(content: string): PackageFile | null {
       if (commit) {
         dep.currentDigest = commit;
       }
+      // TODO: Check if we really need to use parse here or if it should always be a plain https url
       const githubURL = parse(remote);
       if (githubURL) {
         const repo = githubURL.substring('https://github.com/'.length);
-        dep.datasource = 'github';
+        dep.datasource = DATASOURCE_GITHUB;
         dep.lookupName = repo;
         deps.push(dep);
       }
@@ -187,7 +195,7 @@ export function extractPackageFile(content: string): PackageFile | null {
     ) {
       dep.depName = depName;
       dep.currentValue = currentValue || commit.substr(0, 7);
-      dep.datasource = 'go';
+      dep.datasource = DATASOURCE_GO;
       dep.lookupName = importpath;
       if (remote) {
         const remoteMatch = remote.match(
@@ -220,7 +228,7 @@ export function extractPackageFile(content: string): PackageFile | null {
       } else {
         dep.currentValue = parsedUrl.currentValue;
       }
-      dep.datasource = 'github';
+      dep.datasource = DATASOURCE_GITHUB;
       dep.lookupName = dep.repo;
       dep.lookupType = 'releases';
       deps.push(dep);
@@ -234,8 +242,8 @@ export function extractPackageFile(content: string): PackageFile | null {
       dep.currentDigest = digest;
       dep.currentValue = currentValue;
       dep.depName = depName;
-      dep.datasource = 'docker';
-      dep.versionScheme = 'docker';
+      dep.versionScheme = VERSION_SCHEME_DOCKER;
+      dep.datasource = DATASOURCE_DOCKER;
       dep.lookupName = repository;
       deps.push(dep);
     } else {

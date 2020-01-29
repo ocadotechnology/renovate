@@ -15,36 +15,59 @@ export interface RenovateSharedConfig {
   ignoreDeps?: string[];
   labels?: string[];
   managers?: string | string[];
-  schedule?: string | string[];
+  platform?: string;
+  productLinks?: Record<string, string>;
+  prPriority?: number;
+  rebaseStalePrs?: boolean;
+  recreateClosed?: boolean;
+  requiredStatusChecks?: string[];
+  schedule?: string[];
 
   semanticCommits?: boolean;
   semanticCommitScope?: string;
   semanticCommitType?: string;
   statusCheckVerify?: boolean;
+  suppressNotifications?: string[];
+  timezone?: string;
 }
 
 type UpdateConfig<
   T extends RenovateSharedConfig = RenovateSharedConfig
 > = Partial<Record<UpdateType, T>>;
 
+export type RenovateRepository =
+  | string
+  | {
+      repository: string;
+    };
+
 // TODO: Proper typings
 export interface RenovateConfig
   extends RenovateSharedConfig,
     UpdateConfig<PackageRule>,
     Record<string, any> {
+  autodiscover?: boolean;
+  autodiscoverFilter?: string;
   baseBranch?: string;
   baseBranches?: string[];
   branchList?: string[];
   description?: string[];
   dryRun?: boolean;
   errors?: ValidationMessage[];
+
+  /** TODO: Type? */
+  global?: Record<string, any>;
+
   includeForks?: boolean;
   isFork?: boolean;
   onboarding?: boolean;
   onboardingConfig?: RenovateSharedConfig;
   packageRules?: PackageRule[];
+  prConcurrentLimit?: number;
+  prHourlyLimit?: number;
   privateKey?: string | Buffer;
   repoIsOnboarded?: boolean;
+  repositories?: RenovateRepository[];
   requireConfig?: boolean;
   warnings?: ValidationMessage[];
 }

@@ -23,7 +23,7 @@ export interface QualifierToken extends BaseToken {
 
 export type Token = NumberToken | QualifierToken;
 
-function iterateChars(str: string, cb: (p: string, n: string) => void) {
+function iterateChars(str: string, cb: (p: string, n: string) => void): void {
   let prev = null;
   let next = null;
   for (let i = 0; i < str.length; i += 1) {
@@ -34,26 +34,26 @@ function iterateChars(str: string, cb: (p: string, n: string) => void) {
   cb(prev, null);
 }
 
-function isDigit(char: string) {
+function isDigit(char: string): boolean {
   return /^\d$/.test(char);
 }
 
-function isLetter(char: string) {
+function isLetter(char: string): boolean {
   return /^[a-z]$/i.test(char);
 }
 
-function isTransition(prevChar: string, nextChar: string) {
+function isTransition(prevChar: string, nextChar: string): boolean {
   return (
     (isDigit(prevChar) && isLetter(nextChar)) ||
     (isLetter(prevChar) && isDigit(nextChar))
   );
 }
 
-function iterateTokens(versionStr: string, cb: (token: Token) => void) {
+function iterateTokens(versionStr: string, cb: (token: Token) => void): void {
   let currentPrefix = PREFIX_HYPHEN;
   let currentVal = '';
 
-  function yieldToken(transition = false) {
+  function yieldToken(transition = false): void {
     const val = currentVal || '0';
     if (/^\d+$/.test(val)) {
       cb({
@@ -93,7 +93,7 @@ function iterateTokens(versionStr: string, cb: (token: Token) => void) {
   });
 }
 
-function isNull(token: Token) {
+function isNull(token: Token): boolean {
   const val = token.val;
   return (
     val === 0 ||
@@ -101,7 +101,8 @@ function isNull(token: Token) {
     val === 'final' ||
     val === 'ga' ||
     val === 'release' ||
-    val === 'latest'
+    val === 'latest' ||
+    val === 'sr'
   );
 }
 
@@ -112,7 +113,7 @@ const zeroToken: NumberToken = {
   isTransition: false,
 };
 
-function tokenize(versionStr: string) {
+function tokenize(versionStr: string): Token[] {
   let buf: Token[] = [];
   let result: Token[] = [];
   let leadingZero = true;
@@ -147,7 +148,7 @@ function nullFor(token: Token): Token {
       };
 }
 
-function commonOrder(token: Token) {
+function commonOrder(token: Token): number {
   if (token.prefix === PREFIX_DOT && token.type === TYPE_QUALIFIER) {
     return 0;
   }
@@ -160,92 +161,83 @@ function commonOrder(token: Token) {
   return 3;
 }
 
-function qualifierOrder(token: Token) {
+export enum QualifierTypes {
+  Alpha = 1,
+  Beta,
+  Milestone,
+  RC,
+  Snapshot,
+  Release,
+  SP,
+}
+
+export function qualifierType(token: Token): number {
   const val = token.val;
   if (val === 'alpha' || (token.isTransition && val === 'a')) {
-    return 1;
+    return QualifierTypes.Alpha;
   }
   if (val === 'beta' || (token.isTransition && val === 'b')) {
-    return 2;
+    return QualifierTypes.Beta;
   }
   if (val === 'milestone' || (token.isTransition && val === 'm')) {
-    return 3;
+    return QualifierTypes.Milestone;
   }
   if (val === 'rc' || val === 'cr') {
-    return 4;
+    return QualifierTypes.RC;
   }
   if (val === 'snapshot') {
-    return 5;
+    return QualifierTypes.Snapshot;
   }
   if (
     val === '' ||
     val === 'final' ||
     val === 'ga' ||
     val === 'release' ||
-    val === 'latest'
+    val === 'latest' ||
+    val === 'sr'
   ) {
-    return 6;
+    return QualifierTypes.Release;
   }
   if (val === 'sp') {
-    return 7;
+    return QualifierTypes.SP;
   }
   return null;
 }
 
-function qualifierCmp(left: Token, right: Token) {
-  const leftOrder = qualifierOrder(left);
-  const rightOrder = qualifierOrder(right);
+function qualifierCmp(left: Token, right: Token): number {
+  const leftOrder = qualifierType(left);
+  const rightOrder = qualifierType(right);
   if (leftOrder && rightOrder) {
-    if (leftOrder === rightOrder) {
-      return 0;
-    }
-    if (leftOrder < rightOrder) {
-      return -1;
-    }
-    return 1;
-  }
-  if (left.val === right.val) {
+    if (leftOrder < rightOrder) return -1;
+    if (leftOrder > rightOrder) return 1;
     return 0;
   }
-  if (left.val < right.val) {
-    return -1;
-  }
-  // istanbul ignore next
-  return 1;
+
+  if (leftOrder && leftOrder < QualifierTypes.Release) return -1;
+  if (rightOrder && rightOrder < QualifierTypes.Release) return 1;
+
+  if (left.val < right.val) return -1;
+  if (left.val > right.val) return 1;
+  return 0;
 }
 
-function tokenCmp(left: Token, right: Token) {
-  if (left.prefix === right.prefix) {
-    if (left.type === TYPE_NUMBER && right.type === TYPE_NUMBER) {
-      if (left.val === right.val) {
-        return 0;
-      }
-      if (left.val < right.val) {
-        return -1;
-      }
-      return 1;
-    }
-    if (left.type === TYPE_NUMBER) {
-      return 1;
-    }
-    if (right.type === TYPE_NUMBER) {
-      return -1;
-    }
-    return qualifierCmp(left, right);
-  }
+function tokenCmp(left: Token, right: Token): number {
   const leftOrder = commonOrder(left);
   const rightOrder = commonOrder(right);
-  // istanbul ignore if
-  if (leftOrder === rightOrder) {
+
+  if (leftOrder < rightOrder) return -1;
+  if (leftOrder > rightOrder) return 1;
+
+  if (left.type === TYPE_NUMBER && right.type === TYPE_NUMBER) {
+    if (left.val < right.val) return -1;
+    if (left.val > right.val) return 1;
     return 0;
   }
-  if (leftOrder < rightOrder) {
-    return -1;
-  }
-  return 1;
+
+  return qualifierCmp(left, right);
 }
 
-function compare(left: string, right: string) {
+function compare(left: string, right: string): number {
   const leftTokens = tokenize(left);
   const rightTokens = tokenize(right);
   const length = Math.max(leftTokens.length, rightTokens.length);
@@ -258,7 +250,7 @@ function compare(left: string, right: string) {
   return 0;
 }
 
-function isVersion(version: string) {
+function isVersion(version: string): boolean {
   if (!version) return false;
   if (!/^[a-z0-9.-]+$/i.test(version)) return false;
   if (/^[.-]/.test(version)) return false;
@@ -267,26 +259,10 @@ function isVersion(version: string) {
   return !!tokens.length;
 }
 
-function isValid(str: string) {
-  if (!str) {
-    return false;
-  }
-  return isVersion(str) || !!parseRange(str);
-}
-
 const INCLUDING_POINT = 'INCLUDING_POINT';
 const EXCLUDING_POINT = 'EXCLUDING_POINT';
 
-export interface Range {
-  leftType: typeof INCLUDING_POINT | typeof EXCLUDING_POINT;
-  leftValue: string;
-  leftBracket: string;
-  rightType: typeof INCLUDING_POINT | typeof EXCLUDING_POINT;
-  rightValue: string;
-  rightBracket: string;
-}
-
-function parseRange(rangeStr: string) {
+function parseRange(rangeStr: string): any {
   function emptyInterval(): Range {
     return {
       leftType: null,
@@ -383,10 +359,26 @@ function parseRange(rangeStr: string) {
   );
 }
 
+function isValid(str: string): boolean {
+  if (!str) {
+    return false;
+  }
+  return isVersion(str) || !!parseRange(str);
+}
+
+export interface Range {
+  leftType: typeof INCLUDING_POINT | typeof EXCLUDING_POINT;
+  leftValue: string;
+  leftBracket: string;
+  rightType: typeof INCLUDING_POINT | typeof EXCLUDING_POINT;
+  rightValue: string;
+  rightBracket: string;
+}
+
 function rangeToStr(fullRange: Range[]): string | null {
   if (fullRange === null) return null;
 
-  const valToStr = (val: string) => (val === null ? '' : val);
+  const valToStr = (val: string): string => (val === null ? '' : val);
 
   if (fullRange.length === 1) {
     const { leftBracket, rightBracket, leftValue, rightValue } = fullRange[0];
@@ -417,7 +409,7 @@ function autoExtendMavenRange(
 ): string | null {
   const range = parseRange(currentRepresentation);
   if (!range) return currentRepresentation;
-  const isPoint = (vals: Range[]) => {
+  const isPoint = (vals: Range[]): boolean => {
     if (vals.length !== 1) return false;
     const { leftType, leftValue, rightType, rightValue } = vals[0];
     return (
@@ -454,7 +446,7 @@ function autoExtendMavenRange(
   return rangeToStr(range);
 }
 
-function isSubversion(majorVersion: string, minorVersion: string) {
+function isSubversion(majorVersion: string, minorVersion: string): boolean {
   const majorTokens = tokenize(majorVersion);
   const minorTokens = tokenize(minorVersion);
 

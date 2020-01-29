@@ -15,6 +15,8 @@ describe('platform/git/storage', () => {
     base = await tmp.dir({ unsafeCleanup: true });
     const repo = Git(base.path).silent(true);
     await repo.init();
+    await repo.addConfig('user.email', 'Jest@example.com');
+    await repo.addConfig('user.name', 'Jest');
     await fs.writeFile(base.path + '/past_file', 'past');
     await repo.add(['past_file']);
     await repo.commit('past message');
@@ -55,14 +57,14 @@ describe('platform/git/storage', () => {
     });
   });
 
-  afterEach(() => {
-    tmpDir.cleanup();
-    origin.cleanup();
+  afterEach(async () => {
+    await tmpDir.cleanup();
+    await origin.cleanup();
     git.cleanRepo();
   });
 
-  afterAll(() => {
-    base.cleanup();
+  afterAll(async () => {
+    await base.cleanup();
   });
 
   describe('setBaseBranch(branchName)', () => {
@@ -94,7 +96,7 @@ describe('platform/git/storage', () => {
       });
       expect(await fs.exists(tmpDir.path + '/.gitmodules')).toBeTruthy();
       expect(await git.getFileList()).toMatchSnapshot();
-      repo.reset(['--hard', 'HEAD^']);
+      await repo.reset(['--hard', 'HEAD^']);
     });
   });
   describe('branchExists(branchName)', () => {
@@ -164,12 +166,12 @@ describe('platform/git/storage', () => {
     it('should throw if branch merge is stale', async () => {
       expect.assertions(1);
       await git.setBranchPrefix('renovate/');
-      await git.commitFilesToBranch(
-        'test',
-        [{ name: 'some-new-file', contents: 'some new-contents' }],
-        'test mesage',
-        'renovate/past_branch'
-      );
+      await git.commitFilesToBranch({
+        branchName: 'test',
+        files: [{ name: 'some-new-file', contents: 'some new-contents' }],
+        message: 'test mesage',
+        parentBranch: 'renovate/past_branch',
+      });
 
       await git.setBaseBranch('master');
 
@@ -208,28 +210,28 @@ describe('platform/git/storage', () => {
       ).rejects.toMatchSnapshot();
     });
   });
-  describe('commitFilesToBranch(branchName, files, message, parentBranch)', () => {
+  describe('commitFilesToBranch({branchName, files, message, parentBranch})', () => {
     it('creates file', async () => {
       const file = {
         name: 'some-new-file',
         contents: 'some new-contents',
       };
-      await git.commitFilesToBranch(
-        'renovate/past_branch',
-        [file],
-        'Create something'
-      );
+      await git.commitFilesToBranch({
+        branchName: 'renovate/past_branch',
+        files: [file],
+        message: 'Create something',
+      });
     });
     it('deletes file', async () => {
       const file = {
         name: '|delete|',
         contents: 'file_to_delete',
       };
-      await git.commitFilesToBranch(
-        'renovate/something',
-        [file],
-        'Delete something'
-      );
+      await git.commitFilesToBranch({
+        branchName: 'renovate/something',
+        files: [file],
+        message: 'Delete something',
+      });
     });
     it('updates multiple files', async () => {
       const files = [
@@ -242,11 +244,39 @@ describe('platform/git/storage', () => {
           contents: 'other updated content',
         },
       ];
-      await git.commitFilesToBranch(
-        'renovate/something',
+      await git.commitFilesToBranch({
+        branchName: 'renovate/something',
         files,
-        'Update something'
-      );
+        message: 'Update something',
+      });
+    });
+    it('updates git submodules', async () => {
+      const files = [
+        {
+          name: '.',
+          contents: 'some content',
+        },
+      ];
+      await git.commitFilesToBranch({
+        branchName: 'renovate/something',
+        files,
+        message: 'Update something',
+      });
+    });
+    it('does not push when no diff', async () => {
+      const branchName = 'renovate/something';
+      const local = Git(tmpDir.path);
+      await local.push('origin', `master:${branchName}`);
+      await local.fetch([
+        'origin',
+        `refs/heads/${branchName}:refs/remotes/origin/${branchName}`,
+      ]);
+      const files = [];
+      await git.commitFilesToBranch({
+        branchName,
+        files,
+        message: 'Update something',
+      });
     });
   });
 
@@ -368,7 +398,7 @@ describe('platform/git/storage', () => {
         url: base.path,
       });
       expect(await fs.exists(tmpDir.path + '/.gitmodules')).toBeTruthy();
-      repo.reset(['--hard', 'HEAD^']);
+      await repo.reset(['--hard', 'HEAD^']);
     });
   });
 });

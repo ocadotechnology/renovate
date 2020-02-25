@@ -24,9 +24,10 @@ export interface ChangeLogRelease {
 
 export interface ChangeLogProject {
   depName?: string;
-  github: string;
-  githubApiBaseURL?: string;
-  githubBaseURL: string;
+  github?: string;
+  gitlab?: string;
+  apiBaseURL?: string;
+  baseURL: string;
   repository: string;
 }
 

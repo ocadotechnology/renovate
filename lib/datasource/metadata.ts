@@ -1,3 +1,4 @@
+import { logger } from '../logger';
 import is from '@sindresorhus/is';
 import parse from 'github-url-from-git';
 import { ReleaseResult } from './common';
@@ -115,12 +116,14 @@ export function addMetaData(
   hostRules.hosts({ hostType: DATASOURCE_GITHUB }).forEach(host => {
     extraBaseUrls.push(host, `gist.${host}`);
   });
+  extraBaseUrls.push('gitlab.com');
   if (dep.sourceUrl) {
     // try massaging it
     dep.sourceUrl =
       parse(massageGithubUrl(dep.sourceUrl), {
         extraBaseUrls,
       }) || dep.sourceUrl;
+    logger.debug({ dep }, '-----------------------------After Try massaging');
   }
 
   // Clean up any empty urls
@@ -130,7 +133,9 @@ export function addMetaData(
       dep[url] = dep[url].trim();
       // istanbul ignore if
       if (!dep[url].match(/^https?:\/\//)) {
-        delete dep[url];
+        // logger.debug({ url, dep}, '-------------------------------------Deleting non https')
+        // TODO: I commented this out but I'm not sure we want to keep it this way
+        // delete dep[url];
       }
     } else {
       delete dep[url];

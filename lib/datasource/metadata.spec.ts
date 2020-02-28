@@ -2,6 +2,7 @@ import { addMetaData } from './metadata';
 import {
   DATASOURCE_MAVEN,
   DATASOURCE_PYPI,
+  DATASOURCE_NPM,
 } from '../constants/data-binary-source';
 
 describe('datasource/metadata', () => {
@@ -64,6 +65,24 @@ describe('datasource/metadata', () => {
     };
     const datasource = DATASOURCE_PYPI;
     const lookupName = 'django-filter';
+
+    addMetaData(dep, datasource, lookupName);
+    expect(dep).toMatchSnapshot();
+  });
+
+  it('Should handle parsing of sourceUrls correctly for GitLab also', () => {
+    const dep = {
+      sourceUrl: 'https://gitlab.com/meno/dropzone/tree/master',
+      releases: [
+        { version: '5.7.0', releaseTimestamp: '2020-02-14T13:12:00' },
+        {
+          version: '5.6.1',
+          releaseTimestamp: '2020-02-14T10:04:00',
+        },
+      ],
+    };
+    const datasource = DATASOURCE_NPM;
+    const lookupName = 'dropzone';
 
     addMetaData(dep, datasource, lookupName);
     expect(dep).toMatchSnapshot();

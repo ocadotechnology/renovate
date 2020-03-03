@@ -225,7 +225,6 @@ export async function ensurePr(
         upgrade.githubName = logJSON.project.github
           ? logJSON.project.github
           : logJSON.project.gitlab;
-        console.log(upgrade.githubName);
         upgrade.hasReleaseNotes = logJSON.hasReleaseNotes;
         upgrade.releases = [];
         if (
@@ -242,7 +241,6 @@ export async function ensurePr(
           }
         } else {
           logger.debug('No githubName o algo falta');
-          console.log(upgrade);
         }
       } else if (logJSON.error === ChangeLogError.MissingGithubToken) {
         upgrade.prBodyNotes = [

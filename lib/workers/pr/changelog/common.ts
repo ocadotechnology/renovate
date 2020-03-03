@@ -52,5 +52,6 @@ export interface ChangeLogConfig {
   sourceUrl?: string;
   toVersion: string;
   versioning: string;
+  versionScheme?: string;
   changeLogError?: ChangeLogError;
 }

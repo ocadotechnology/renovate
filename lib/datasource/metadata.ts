@@ -1,6 +1,6 @@
-import { logger } from '../logger';
 import is from '@sindresorhus/is';
 import parse from 'github-url-from-git';
+import { logger } from '../logger';
 import { ReleaseResult } from './common';
 import * as hostRules from '../util/host-rules';
 import { DATASOURCE_GITHUB } from '../constants/data-binary-source';

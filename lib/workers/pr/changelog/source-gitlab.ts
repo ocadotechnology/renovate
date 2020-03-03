@@ -1,16 +1,17 @@
 import URL from 'url';
 import { api } from '../../../platform/github/gh-got-wrapper';
 import { logger } from '../../../logger';
-// import * as hostRules from '../../../util/host-rules';
+import * as hostRules from '../../../util/host-rules';
 import * as versioning from '../../../versioning';
 import { addReleaseNotes } from './release-notes';
 import {
   ChangeLogConfig,
-  //  ChangeLogError,
+  ChangeLogError,
   ChangeLogRelease,
   ChangeLogResult,
 } from './common';
 import { Release } from '../../../datasource';
+import { PLATFORM_TYPE_GITLAB } from '../../../constants/platforms';
 
 const { get: ghGot } = api;
 
@@ -61,6 +62,10 @@ export async function getChangeLogJSON({
   depName,
   manager,
 }: ChangeLogConfig): Promise<ChangeLogResult | null> {
+  if (sourceUrl === 'https://gitlab.com/DefinitelyTyped/DefinitelyTyped') {
+    logger.debug('No release notes for @types');
+    return null;
+  }
   logger.debug('Getting ChangeLog JSON');
   const version = versioning.get(versionScheme);
   const { protocol, host, pathname } = URL.parse(sourceUrl);
@@ -74,25 +79,32 @@ export async function getChangeLogJSON({
   // : sourceUrl;
   const url = sourceUrl;
   logger.debug({ url }, 'URL from sourceUrl');
-  // const config = hostRules.find({
-  //  hostType: 'gitlab',
-  //  url,
-  // });
-  // if (!config.token) {
-  // // istanbul ignore if
-  // if (sourceUrl.includes('gitlab.com')) {
-  // logger.warn(
-  // { manager, depName, sourceUrl, config },
-  // 'No gitlab.com token has been configured. Skipping release notes retrieval'
-  // );
-  // return { error: ChangeLogError.MissingGithubToken };
-  // }
-  // logger.info(
-  // { manager, depName, sourceUrl },
-  // 'Repository URL does not match any known gitlab hosts - skipping changelog retrieval'
-  // );
-  // return null;
-  // }
+  const config = hostRules.find({
+    hostType: PLATFORM_TYPE_GITLAB,
+    url,
+  });
+  // istanbul ignore if
+  if (!config.token) {
+    // prettier-ignore
+    if (URL.parse(sourceUrl).host.search(/gitlab/) !== -1) { // lgtm [js/incomplete-url-substring-sanitization]
+      logger.warn(
+        {manager, depName, sourceUrl},
+        'No gitlab token has been configured. Skipping release notes retrieval'
+      );
+      return {error: ChangeLogError.MissingGitlabToken};
+    }
+    // logger.warn(
+    // { manager, depName, sourceUrl, config },
+    // 'No gitlab.com token has been configured. Skipping release notes retrieval'
+    // );
+    // return { error: ChangeLogError.MissingGithubToken };
+    // }
+    // logger.info(
+    // { manager, depName, sourceUrl },
+    // 'Repository URL does not match any known gitlab hosts - skipping changelog retrieval'
+    // );
+    return null;
+  }
   // const apiBaseURL = sourceUrl.startsWith('https://github.com/')
   // ? 'https://api.github.com/'
   // : endpoint; // TODO FIX
